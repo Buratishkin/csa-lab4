@@ -1,0 +1,274 @@
+in_source: |-
+  (interrupt
+    (print "INT:")
+    (print-char (load-at 1))
+    (print-char 10))
+
+  (enable-interrupts)
+  (int)
+
+  (setq i 0)
+
+  (loop (< i 5)
+    (print-int i)
+    (print-char 10)
+    (setq i (+ i 1)))
+    
+in_stdin: ""
+
+in_interrupt_ticks: "500,1500"
+in_interrupt_symbol: "!"
+
+out_code_hex: |-
+  0000 - 40000026 - JMP 38
+  0001 - 01000002 - PUSHI 2
+  0002 - 11000007 - STORE 7
+  0003 - 10000007 - LOAD 7
+  0004 - 12000000 - LOADI
+  0005 - 11000008 - STORE 8
+  0006 - 10000007 - LOAD 7
+  0007 - 01000001 - PUSHI 1
+  0008 - 20000000 - ADD
+  0009 - 11000007 - STORE 7
+  0010 - 10000008 - LOAD 8
+  0011 - 01000000 - PUSHI 0
+  0012 - 33000000 - GT
+  0013 - 4100001A - JZ 26
+  0014 - 10000007 - LOAD 7
+  0015 - 12000000 - LOADI
+  0016 - 61000001 - OUT 1
+  0017 - 10000007 - LOAD 7
+  0018 - 01000001 - PUSHI 1
+  0019 - 20000000 - ADD
+  0020 - 11000007 - STORE 7
+  0021 - 10000008 - LOAD 8
+  0022 - 01000001 - PUSHI 1
+  0023 - 21000000 - SUB
+  0024 - 11000008 - STORE 8
+  0025 - 4000000A - JMP 10
+  0026 - 01000000 - PUSHI 0
+  0027 - 02000000 - DROP
+  0028 - 01000001 - PUSHI 1
+  0029 - 12000000 - LOADI
+  0030 - 03000000 - DUP
+  0031 - 61000001 - OUT 1
+  0032 - 02000000 - DROP
+  0033 - 0100000A - PUSHI 10
+  0034 - 03000000 - DUP
+  0035 - 61000001 - OUT 1
+  0036 - 02000000 - DROP
+  0037 - 71000000 - IRET
+  0038 - 72000000 - EI
+  0039 - 72000000 - EI
+  0040 - 01000000 - PUSHI 0
+  0041 - 02000000 - DROP
+  0042 - 70000000 - INT 0
+  0043 - 01000000 - PUSHI 0
+  0044 - 02000000 - DROP
+  0045 - 01000000 - PUSHI 0
+  0046 - 03000000 - DUP
+  0047 - 11000009 - STORE 9
+  0048 - 02000000 - DROP
+  0049 - 10000009 - LOAD 9
+  0050 - 01000005 - PUSHI 5
+  0051 - 32000000 - LT
+  0052 - 41000087 - JZ 135
+  0053 - 10000009 - LOAD 9
+  0054 - 03000000 - DUP
+  0055 - 1100000B - STORE 11
+  0056 - 1100000A - STORE 10
+  0057 - 1000000A - LOAD 10
+  0058 - 01000000 - PUSHI 0
+  0059 - 30000000 - EQ
+  0060 - 41000040 - JZ 64
+  0061 - 01000030 - PUSHI 48
+  0062 - 61000001 - OUT 1
+  0063 - 4000007A - JMP 122
+  0064 - 1000000A - LOAD 10
+  0065 - 01000000 - PUSHI 0
+  0066 - 32000000 - LT
+  0067 - 4100004A - JZ 74
+  0068 - 0100002D - PUSHI 45
+  0069 - 61000001 - OUT 1
+  0070 - 01000000 - PUSHI 0
+  0071 - 1000000A - LOAD 10
+  0072 - 21000000 - SUB
+  0073 - 1100000A - STORE 10
+  0074 - 01000000 - PUSHI 0
+  0075 - 1100000C - STORE 12
+  0076 - 0100000E - PUSHI 14
+  0077 - 1100000D - STORE 13
+  0078 - 1000000A - LOAD 10
+  0079 - 01000000 - PUSHI 0
+  0080 - 33000000 - GT
+  0081 - 41000064 - JZ 100
+  0082 - 1000000D - LOAD 13
+  0083 - 1000000A - LOAD 10
+  0084 - 0100000A - PUSHI 10
+  0085 - 24000000 - MOD
+  0086 - 13000000 - STOREI
+  0087 - 1000000D - LOAD 13
+  0088 - 01000001 - PUSHI 1
+  0089 - 20000000 - ADD
+  0090 - 1100000D - STORE 13
+  0091 - 1000000C - LOAD 12
+  0092 - 01000001 - PUSHI 1
+  0093 - 20000000 - ADD
+  0094 - 1100000C - STORE 12
+  0095 - 1000000A - LOAD 10
+  0096 - 0100000A - PUSHI 10
+  0097 - 23000000 - DIV
+  0098 - 1100000A - STORE 10
+  0099 - 4000004E - JMP 78
+  0100 - 1000000D - LOAD 13
+
+out_data_dec: |-
+  [
+    1,
+    33,
+    4,
+    73,
+    78,
+    84,
+    58,
+    7,
+    0,
+    5,
+    0,
+    4,
+    0,
+    13,
+    4,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ]
+
+out_stdout: |
+  Ticks: 2788
+  Halt reason: HALT instruction
+  Interrupts handled: 3
+  ==========================================================================================================
+  INT:!
+  0
+  INT:!
+  1
+  INT:!
+  2
+  3
+  4
+
+out_log: |-
+  TICK=000001 | PC=0000 | MPC=00 | IR=0000 - 40000026 - JMP 38         | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000002 | PC=0038 | MPC=00 | IR=None                             | MICRO=JMP              | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000003 | PC=0038 | MPC=00 | IR=0038 - 72000000 - EI             | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000004 | PC=0039 | MPC=00 | IR=None                             | MICRO=EI               | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000005 | PC=0039 | MPC=00 | IR=0039 - 72000000 - EI             | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000006 | PC=0040 | MPC=00 | IR=None                             | MICRO=EI               | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000007 | PC=0040 | MPC=00 | IR=0040 - 01000000 - PUSHI 0        | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000008 | PC=0040 | MPC=01 | IR=0040 - 01000000 - PUSHI 0        | MICRO=PUSH_IR_OPERAND  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[0]                      | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000009 | PC=0041 | MPC=02 | IR=0041 - 01000000 - PUSHI 0        | MICRO=INC_PC           | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[0]                      | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000010 | PC=0041 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[0]                      | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000011 | PC=0041 | MPC=00 | IR=0041 - 02000000 - DROP           | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[0]                      | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000012 | PC=0041 | MPC=01 | IR=0041 - 02000000 - DROP           | MICRO=DROP             | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000013 | PC=0042 | MPC=02 | IR=0042 - 02000000 - DROP           | MICRO=INC_PC           | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000014 | PC=0042 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000015 | PC=0042 | MPC=00 | IR=0042 - 70000000 - INT 0          | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=1 | IN_INT=0 | INT=-                        | INT_COUNT=000 | DEV=   0 | RET=[]               | OUT=''
+  TICK=000016 | PC=0001 | MPC=00 | IR=None                             | MICRO=INT              | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=SW_INT_0->handler@1      | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000017 | PC=0001 | MPC=00 | IR=0001 - 01000002 - PUSHI 2        | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000018 | PC=0001 | MPC=01 | IR=0001 - 01000002 - PUSHI 2        | MICRO=PUSH_IR_OPERAND  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000019 | PC=0002 | MPC=02 | IR=0002 - 01000002 - PUSHI 2        | MICRO=INC_PC           | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000020 | PC=0002 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000021 | PC=0002 | MPC=00 | IR=0002 - 11000007 - STORE 7        | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000022 | PC=0002 | MPC=01 | IR=0002 - 11000007 - STORE 7        | MICRO=STORE_DIRECT     | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000023 | PC=0003 | MPC=02 | IR=0003 - 11000007 - STORE 7        | MICRO=INC_PC           | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000024 | PC=0003 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000025 | PC=0003 | MPC=00 | IR=0003 - 10000007 - LOAD 7         | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000026 | PC=0003 | MPC=01 | IR=0003 - 10000007 - LOAD 7         | MICRO=LOAD_DIRECT      | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000027 | PC=0004 | MPC=02 | IR=0004 - 10000007 - LOAD 7         | MICRO=INC_PC           | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000028 | PC=0004 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000029 | PC=0004 | MPC=00 | IR=0004 - 12000000 - LOADI          | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000030 | PC=0004 | MPC=01 | IR=0004 - 12000000 - LOADI          | MICRO=LOAD_INDIRECT    | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000031 | PC=0005 | MPC=02 | IR=0005 - 12000000 - LOADI          | MICRO=INC_PC           | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000032 | PC=0005 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000033 | PC=0005 | MPC=00 | IR=0005 - 11000008 - STORE 8        | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000034 | PC=0005 | MPC=01 | IR=0005 - 11000008 - STORE 8        | MICRO=STORE_DIRECT     | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000035 | PC=0006 | MPC=02 | IR=0006 - 11000008 - STORE 8        | MICRO=INC_PC           | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000036 | PC=0006 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000037 | PC=0006 | MPC=00 | IR=0006 - 10000007 - LOAD 7         | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000038 | PC=0006 | MPC=01 | IR=0006 - 10000007 - LOAD 7         | MICRO=LOAD_DIRECT      | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000039 | PC=0007 | MPC=02 | IR=0007 - 10000007 - LOAD 7         | MICRO=INC_PC           | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000040 | PC=0007 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000041 | PC=0007 | MPC=00 | IR=0007 - 01000001 - PUSHI 1        | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000042 | PC=0007 | MPC=01 | IR=0007 - 01000001 - PUSHI 1        | MICRO=PUSH_IR_OPERAND  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2, 1]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000043 | PC=0008 | MPC=02 | IR=0008 - 01000001 - PUSHI 1        | MICRO=INC_PC           | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2, 1]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000044 | PC=0008 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2, 1]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000045 | PC=0008 | MPC=00 | IR=0008 - 20000000 - ADD            | MICRO=FETCH            | A=          0 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2, 1]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000046 | PC=0008 | MPC=01 | IR=0008 - 20000000 - ADD            | MICRO=POP_A            | A=          1 | B=          0 | ALU=          0 | ZF=0 | NF=0 | STACK=[2]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000047 | PC=0008 | MPC=02 | IR=0008 - 20000000 - ADD            | MICRO=POP_B            | A=          1 | B=          2 | ALU=          0 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000048 | PC=0008 | MPC=03 | IR=0008 - 20000000 - ADD            | MICRO=ALU_ADD          | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000049 | PC=0008 | MPC=04 | IR=0008 - 20000000 - ADD            | MICRO=PUSH_ALU         | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000050 | PC=0009 | MPC=05 | IR=0009 - 20000000 - ADD            | MICRO=INC_PC           | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000051 | PC=0009 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000052 | PC=0009 | MPC=00 | IR=0009 - 11000007 - STORE 7        | MICRO=FETCH            | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000053 | PC=0009 | MPC=01 | IR=0009 - 11000007 - STORE 7        | MICRO=STORE_DIRECT     | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000054 | PC=0010 | MPC=02 | IR=0010 - 11000007 - STORE 7        | MICRO=INC_PC           | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000055 | PC=0010 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000056 | PC=0010 | MPC=00 | IR=0010 - 10000008 - LOAD 8         | MICRO=FETCH            | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000057 | PC=0010 | MPC=01 | IR=0010 - 10000008 - LOAD 8         | MICRO=LOAD_DIRECT      | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000058 | PC=0011 | MPC=02 | IR=0011 - 10000008 - LOAD 8         | MICRO=INC_PC           | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000059 | PC=0011 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000060 | PC=0011 | MPC=00 | IR=0011 - 01000000 - PUSHI 0        | MICRO=FETCH            | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000061 | PC=0011 | MPC=01 | IR=0011 - 01000000 - PUSHI 0        | MICRO=PUSH_IR_OPERAND  | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[4, 0]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000062 | PC=0012 | MPC=02 | IR=0012 - 01000000 - PUSHI 0        | MICRO=INC_PC           | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[4, 0]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000063 | PC=0012 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[4, 0]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000064 | PC=0012 | MPC=00 | IR=0012 - 33000000 - GT             | MICRO=FETCH            | A=          1 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[4, 0]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000065 | PC=0012 | MPC=01 | IR=0012 - 33000000 - GT             | MICRO=POP_A            | A=          0 | B=          2 | ALU=          3 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000066 | PC=0012 | MPC=02 | IR=0012 - 33000000 - GT             | MICRO=POP_B            | A=          0 | B=          4 | ALU=          3 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000067 | PC=0012 | MPC=03 | IR=0012 - 33000000 - GT             | MICRO=ALU_GT           | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000068 | PC=0012 | MPC=04 | IR=0012 - 33000000 - GT             | MICRO=PUSH_ALU         | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[1]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000069 | PC=0013 | MPC=05 | IR=0013 - 33000000 - GT             | MICRO=INC_PC           | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[1]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000070 | PC=0013 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[1]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000071 | PC=0013 | MPC=00 | IR=0013 - 4100001A - JZ 26          | MICRO=FETCH            | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[1]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000072 | PC=0014 | MPC=00 | IR=None                             | MICRO=JZ               | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000073 | PC=0014 | MPC=00 | IR=0014 - 10000007 - LOAD 7         | MICRO=FETCH            | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000074 | PC=0014 | MPC=01 | IR=0014 - 10000007 - LOAD 7         | MICRO=LOAD_DIRECT      | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000075 | PC=0015 | MPC=02 | IR=0015 - 10000007 - LOAD 7         | MICRO=INC_PC           | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000076 | PC=0015 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000077 | PC=0015 | MPC=00 | IR=0015 - 12000000 - LOADI          | MICRO=FETCH            | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000078 | PC=0015 | MPC=01 | IR=0015 - 12000000 - LOADI          | MICRO=LOAD_INDIRECT    | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[73]                     | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000079 | PC=0016 | MPC=02 | IR=0016 - 12000000 - LOADI          | MICRO=INC_PC           | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[73]                     | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000080 | PC=0016 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[73]                     | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000081 | PC=0016 | MPC=00 | IR=0016 - 61000001 - OUT 1          | MICRO=FETCH            | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[73]                     | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT=''
+  TICK=000082 | PC=0016 | MPC=01 | IR=0016 - 61000001 - OUT 1          | MICRO=PORT_OUT         | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000083 | PC=0017 | MPC=02 | IR=0017 - 61000001 - OUT 1          | MICRO=INC_PC           | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000084 | PC=0017 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000085 | PC=0017 | MPC=00 | IR=0017 - 10000007 - LOAD 7         | MICRO=FETCH            | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000086 | PC=0017 | MPC=01 | IR=0017 - 10000007 - LOAD 7         | MICRO=LOAD_DIRECT      | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000087 | PC=0018 | MPC=02 | IR=0018 - 10000007 - LOAD 7         | MICRO=INC_PC           | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000088 | PC=0018 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000089 | PC=0018 | MPC=00 | IR=0018 - 01000001 - PUSHI 1        | MICRO=FETCH            | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000090 | PC=0018 | MPC=01 | IR=0018 - 01000001 - PUSHI 1        | MICRO=PUSH_IR_OPERAND  | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3, 1]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000091 | PC=0019 | MPC=02 | IR=0019 - 01000001 - PUSHI 1        | MICRO=INC_PC           | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3, 1]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000092 | PC=0019 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3, 1]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000093 | PC=0019 | MPC=00 | IR=0019 - 20000000 - ADD            | MICRO=FETCH            | A=          0 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3, 1]                   | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000094 | PC=0019 | MPC=01 | IR=0019 - 20000000 - ADD            | MICRO=POP_A            | A=          1 | B=          4 | ALU=          1 | ZF=0 | NF=0 | STACK=[3]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000095 | PC=0019 | MPC=02 | IR=0019 - 20000000 - ADD            | MICRO=POP_B            | A=          1 | B=          3 | ALU=          1 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000096 | PC=0019 | MPC=03 | IR=0019 - 20000000 - ADD            | MICRO=ALU_ADD          | A=          1 | B=          3 | ALU=          4 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000097 | PC=0019 | MPC=04 | IR=0019 - 20000000 - ADD            | MICRO=PUSH_ALU         | A=          1 | B=          3 | ALU=          4 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000098 | PC=0020 | MPC=05 | IR=0020 - 20000000 - ADD            | MICRO=INC_PC           | A=          1 | B=          3 | ALU=          4 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000099 | PC=0020 | MPC=00 | IR=None                             | MICRO=END_INSTRUCTION  | A=          1 | B=          3 | ALU=          4 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000100 | PC=0020 | MPC=00 | IR=0020 - 11000007 - STORE 7        | MICRO=FETCH            | A=          1 | B=          3 | ALU=          4 | ZF=0 | NF=0 | STACK=[4]                      | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
+  TICK=000101 | PC=0020 | MPC=01 | IR=0020 - 11000007 - STORE 7        | MICRO=STORE_DIRECT     | A=          1 | B=          3 | ALU=          4 | ZF=0 | NF=0 | STACK=[]                       | IE=0 | IN_INT=1 | INT=-                        | INT_COUNT=001 | DEV=  33 | RET=[]               | OUT='I'
