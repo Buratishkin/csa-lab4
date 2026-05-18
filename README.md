@@ -802,7 +802,7 @@ ADD:
 ### 7.4. DataPath
 
 <p align="center">
-  <img src="scheme/data path.jpg" alt="DataPath" width="850">
+  <img src="schema/data path.jpg" alt="DataPath" width="850">
 </p>
 
 В модели используются следующие основные компоненты:
@@ -896,7 +896,7 @@ EQ, NE, LT, GT, LE, GE
 ### 7.5. ControlUnit
 
 <p align="center">
-  <img src="scheme/control unit.jpg" alt="Control Unit" width="850">
+  <img src="schema/control unit.jpg" alt="Control Unit" width="850">
 </p>
 
 ControlUnit содержит следующие основные элементы:
