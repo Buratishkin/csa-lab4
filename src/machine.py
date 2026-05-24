@@ -5,8 +5,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from isa import Instruction, read_code
-from microcode import MicroOp, get_microprogram
+from src.isa import Instruction, read_code
+from src.microcode import MicroOp, get_microprogram
 
 DEFAULT_DATA_MEMORY_SIZE = 4096
 DEFAULT_TICK_LIMIT = 100_000
@@ -34,8 +34,6 @@ class DataPath:
 
     reg_a: int = 0
     reg_b: int = 0
-    alu_result: int = 0
-
     zero_flag: bool = False
     negative_flag: bool = False
 
@@ -166,6 +164,7 @@ class ControlUnit:
     next_interrupt_index: int = 0
     interrupts_handled: int = 0
     last_interrupt_event: str = "-"
+    last_alu_result: int = 0
 
     def __post_init__(self) -> None:
         self.interrupt_ticks = sorted(int(tick) for tick in self.interrupt_ticks)
@@ -231,7 +230,6 @@ class ControlUnit:
                 "pc": return_pc,
                 "reg_a": dp.reg_a,
                 "reg_b": dp.reg_b,
-                "alu_result": dp.alu_result,
                 "zero_flag": dp.zero_flag,
                 "negative_flag": dp.negative_flag,
                 "data_stack": dp.data_stack.copy(),
@@ -260,7 +258,6 @@ class ControlUnit:
         self.pc = int(state["pc"])
         dp.reg_a = int(state["reg_a"])
         dp.reg_b = int(state["reg_b"])
-        dp.alu_result = int(state["alu_result"])
         dp.zero_flag = bool(state["zero_flag"])
         dp.negative_flag = bool(state["negative_flag"])
         dp.data_stack = list(state["data_stack"])  # type: ignore[arg-type]
@@ -305,13 +302,6 @@ class ControlUnit:
 
             case MicroOp.DUP:
                 dp.push(dp.peek())
-                self.mpc += 1
-
-            case MicroOp.SWAP:
-                first = dp.pop()
-                second = dp.pop()
-                dp.push(first)
-                dp.push(second)
                 self.mpc += 1
 
             # Data memory
@@ -386,10 +376,6 @@ class ControlUnit:
             case MicroOp.ALU_GE:
                 self.write_alu_result(int(dp.reg_b >= dp.reg_a))
 
-            case MicroOp.PUSH_ALU:
-                dp.push(dp.alu_result)
-                self.mpc += 1
-
             # Control flow
             case MicroOp.JMP:
                 self.pc = self.ir.operand
@@ -426,12 +412,8 @@ class ControlUnit:
 
             # Interrupts
             case MicroOp.INT:
-                if self.ir.operand != 0:
-                    raise RuntimeError(
-                        f"Only interrupt number 0 is supported, got {self.ir.operand}"
-                    )
                 self.enter_interrupt(
-                    event_name=f"SW_INT_{self.ir.operand}",
+                    event_name="SW_INT",
                     return_pc=self.pc + 1,
                 )
 
@@ -479,8 +461,10 @@ class ControlUnit:
 
     def write_alu_result(self, value: int) -> None:
         value = self.datapath.normalize_word(value)
-        self.datapath.alu_result = value
+        self.last_alu_result = value
+
         self.datapath.set_flags(value)
+        self.datapath.push(value)
         self.mpc += 1
 
     # Logging
@@ -516,7 +500,7 @@ class ControlUnit:
                 f"MICRO={fit(micro_op_name, 16)}",
                 f"A={self.datapath.reg_a:>11d}",
                 f"B={self.datapath.reg_b:>11d}",
-                f"ALU={self.datapath.alu_result:>11d}",
+                f"ALU={self.last_alu_result:>11d}",
                 f"ZF={int(self.datapath.zero_flag)}",
                 f"NF={int(self.datapath.negative_flag)}",
                 f"STACK={fit(stack_text, 24)}",
@@ -703,7 +687,7 @@ def main() -> None:
     parser.add_argument(
         "--interrupt-symbol",
         default="!",
-        help="One character placed into data_memory[0x04] when interrupt fires.",
+        help="One character placed into data_memory[0x01] when interrupt fires.",
     )
 
     args = parser.parse_args()

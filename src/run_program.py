@@ -85,10 +85,6 @@ def main() -> None:
 
     if args.interrupt_ticks:
         machine_cmd.extend(["--interrupt-ticks", args.interrupt_ticks])
-        machine_cmd.extend(["--interrupt-symbol", args.interrupt_symbol])
-
-    if args.interrupt_ticks:
-        machine_cmd.extend(["--interrupt-ticks", args.interrupt_ticks])
 
     if args.interrupt_symbol:
         machine_cmd.extend(["--interrupt-symbol", args.interrupt_symbol])
@@ -102,7 +98,15 @@ def main() -> None:
     run_command(machine_cmd)
 
     print("\nGenerated files:")
-    for path in [bin_file, data_file, disasm_file,  vars_file, out_file, log_file]:
+    for path in [
+        bin_file,
+        data_file,
+        disasm_file,
+        vars_file,
+        out_file,
+        log_file,
+        data_out_file,
+    ]:
         print(f"  {path}")
 
     if out_file.exists():

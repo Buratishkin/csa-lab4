@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from isa import Opcode
+from src.isa import Opcode
 
 class MicroOp(StrEnum):
     PUSH_IR_OPERAND = "PUSH_IR_OPERAND"
     DROP = "DROP"
     DUP = "DUP"
-    SWAP = "SWAP"
 
     LOAD_DIRECT = "LOAD_DIRECT"
     STORE_DIRECT = "STORE_DIRECT"
@@ -17,7 +16,6 @@ class MicroOp(StrEnum):
 
     POP_A = "POP_A"
     POP_B = "POP_B"
-    PUSH_ALU = "PUSH_ALU"
 
     ALU_ADD = "ALU_ADD"
     ALU_SUB = "ALU_SUB"
@@ -59,7 +57,7 @@ def normal(op: MicroOp) -> list[MicroOp]:
 
 
 def branch(op: MicroOp) -> list[MicroOp]:
-    return [op, MicroOp.END_INSTRUCTION]
+    return [op]
 
 
 def bin_alu(op: MicroOp) -> list[MicroOp]:
@@ -67,7 +65,6 @@ def bin_alu(op: MicroOp) -> list[MicroOp]:
         MicroOp.POP_A,
         MicroOp.POP_B,
         op,
-        MicroOp.PUSH_ALU,
         MicroOp.INC_PC,
         MicroOp.END_INSTRUCTION,
     ]
@@ -75,13 +72,12 @@ def bin_alu(op: MicroOp) -> list[MicroOp]:
 
 MICROPROGRAM_MEMORY: dict[Opcode, list[MicroOp]] = {
     # system
-    Opcode.HALT: seq(MicroOp.HALT, MicroOp.END_INSTRUCTION),
+    Opcode.HALT: seq(MicroOp.HALT),
 
     # stack
     Opcode.PUSHI: normal(MicroOp.PUSH_IR_OPERAND),
     Opcode.DROP: normal(MicroOp.DROP),
     Opcode.DUP: normal(MicroOp.DUP),
-    Opcode.SWAP: normal(MicroOp.SWAP),
 
     # data memory
     Opcode.LOAD: normal(MicroOp.LOAD_DIRECT),

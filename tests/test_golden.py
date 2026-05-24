@@ -106,13 +106,11 @@ def test_translator_and_machine(golden_path):
     assert first_lines(actual_code_hex) == first_lines(expected_code_hex)
 
     # Память команд в бинарном виде, если есть поле out_code.
-    # ВАЖНО: это всё ещё проверяет весь бинарник целиком.
     if "out_code" in golden:
         assert instructions_to_bytes(translation.instructions) == golden["out_code"]
 
     # Финальная память данных.
-    # Проверяем только первые n ячеек, где n = размер .data.json,
-    # то есть размер translation.data_memory.
+    # Проверяем только первые n ячеек, где n = размер .data.json
     data_len = len(translation.data_memory)
     final_data_prefix = result.data_memory[:data_len]
 

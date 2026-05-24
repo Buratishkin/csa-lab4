@@ -5,8 +5,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from isa import Instruction, Opcode, write_code, write_disasm, instructions_to_words
-from lisp_parser import Expression, is_string_literal, parse, string_literal_value
+from src.isa import Instruction, Opcode, write_code, write_disasm
+from src.lisp_parser import Expression, is_string_literal, parse, string_literal_value
 
 INPUT_PORT = 0
 OUTPUT_PORT = 1
@@ -188,17 +188,8 @@ class Compiler:
         self.emit(Opcode.PUSHI, 0)
 
     def compile_software_interrupt(self, args: list[Expression]) -> None:
-        if len(args) > 1:
-            raise TranslationError(f"int requires 0 or 1 arguments, got {len(args)}")
-
-        interrupt_number = 0
-
-        if args:
-            if not isinstance(args[0], int):
-                raise TranslationError("int argument must be integer interrupt number")
-            interrupt_number = args[0]
-
-        self.emit(Opcode.INT, interrupt_number)
+        self.require_arg_count("int", args, 0)
+        self.emit(Opcode.INT)
         self.emit(Opcode.PUSHI, 0)
 
     def compile_setq(self, args: list[Expression]) -> None:
@@ -785,6 +776,7 @@ class Compiler:
 
     def emit(self, opcode: Opcode, operand: int = 0) -> int:
         self.instructions.append(Instruction(opcode, operand))
+        # возвращаем адрес только что добавленной инструкции
         return len(self.instructions) - 1
 
     def emit_placeholder(self, opcode: Opcode) -> int:

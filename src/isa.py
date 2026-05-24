@@ -26,7 +26,6 @@ class Opcode(IntEnum):
     PUSHI = 0x01
     DROP = 0x02
     DUP = 0x03
-    SWAP = 0x04
 
     # data memory
     LOAD = 0x10
@@ -63,8 +62,8 @@ class Opcode(IntEnum):
     OUT = 0x61
 
     # interrupts
-    # INT operand is an interrupt number for software interrupt.
-    # Hardware interrupts use the interrupt vector stored in data memory.
+    # INT has no explicit operand; both software and hardware interrupts use
+    # the interrupt vector stored in data memory.
     INT = 0x70
     IRET = 0x71
     EI = 0x72
@@ -75,7 +74,6 @@ NO_OPERAND_OPCODES: set[Opcode] = {
     Opcode.HALT,
     Opcode.DROP,
     Opcode.DUP,
-    Opcode.SWAP,
     Opcode.LOADI,
     Opcode.STOREI,
     Opcode.ADD,
@@ -90,6 +88,7 @@ NO_OPERAND_OPCODES: set[Opcode] = {
     Opcode.LE,
     Opcode.GE,
     Opcode.RET,
+    Opcode.INT,
     Opcode.IRET,
     Opcode.EI,
     Opcode.DI,
@@ -110,7 +109,6 @@ UNSIGNED_OPERAND_OPCODES: set[Opcode] = {
     Opcode.CALL,
     Opcode.IN,
     Opcode.OUT,
-    Opcode.INT,
 }
 
 
