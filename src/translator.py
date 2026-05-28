@@ -5,15 +5,52 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from src.isa import Instruction, Opcode, write_code, write_disasm
+from src.isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES, Instruction, Opcode, write_code, write_disasm
 from src.lisp_parser import Expression, is_string_literal, parse, string_literal_value
 
 INPUT_PORT = 0
-OUTPUT_PORT = 1
+OUTPUT_CHAR_PORT = 1
+OUTPUT_INT_PORT = 2
+
+# Backward-compatible alias: old code used OUTPUT_PORT for character output.
+OUTPUT_PORT = OUTPUT_CHAR_PORT
 
 INTERRUPT_VECTOR_ADDR = 0x00
-INTERRUPT_DEVICE_CELL = 0x01
-RESERVED_DATA_CELLS = 0x02
+INTERRUPT_DEVICE_CELL = DATA_WORD_SIZE_BYTES
+RESERVED_DATA_CELLS = 2 * DATA_WORD_SIZE_BYTES
+
+SPECIAL_FORM_NAMES = {
+    "load-at",
+    "store-at",
+    "read-int",
+    "call",
+    "enable-interrupts",
+    "disable-interrupts",
+    "int",
+    "+",
+    "-",
+    "*",
+    "/",
+    "%",
+    "=",
+    "!=",
+    "<",
+    ">",
+    "<=",
+    ">=",
+    "print",
+    "print-pstr",
+    "pstr-len",
+    "pstr-get",
+    "pstr-set",
+    "setq",
+    "if",
+    "loop",
+    "begin",
+    "print-char",
+    "print-int",
+    "read-char",
+}
 
 class TranslationError(Exception):
     pass
@@ -26,6 +63,9 @@ class Compiler:
     data_initial: dict[int, int] = field(default_factory=dict)
     procedures: dict[str, int] = field(default_factory=dict)
     pending_calls: list[tuple[int, str]] = field(default_factory=list)
+    procedure_params: dict[str, list[tuple[str, int]]] = field(default_factory=dict)
+    local_scopes: list[dict[str, int]] = field(default_factory=list)
+    call_result_addr: int | None = None
 
     def compile_program(self, expressions: list[Expression]) -> list[Instruction]:
         procedure_expressions: list[list[Expression]] = []
@@ -43,6 +83,9 @@ class Compiler:
                 main_expressions.append(expression)
 
         jmp_main_index = self.emit_placeholder(Opcode.JMP)
+
+        for procedure in procedure_expressions:
+            self.declare_proc_signature(procedure)
 
         for procedure in procedure_expressions:
             self.compile_proc(procedure)
@@ -251,31 +294,37 @@ class Compiler:
         self.emit(Opcode.PUSHI, 0)
 
     def compile_proc(self, expression: list[Expression]) -> None:
-        if len(expression) < 2:
-            raise TranslationError("proc requires name and body")
-
-        name_expr = expression[1]
-
-        if not isinstance(name_expr, str) or is_string_literal(name_expr):
-            raise TranslationError("proc name must be a symbol")
-
-        name = name_expr
-        body = expression[2:]
+        name, _, body = self.parse_proc_definition(expression)
 
         if name in self.procedures:
             raise TranslationError(f"Procedure already defined: {name}")
 
         self.procedures[name] = self.current_address()
 
-        for body_expr in body:
-            self.compile_expr(body_expr)
-            self.emit(Opcode.DROP)
+        local_scope = {
+            param_name: address
+            for param_name, address in self.procedure_params.get(name, [])
+        }
+        self.local_scopes.append(local_scope)
 
-        self.emit(Opcode.PUSHI, 0)
-        self.emit(Opcode.RET)
+        try:
+            if not body:
+                self.emit(Opcode.PUSHI, 0)
+                self.emit(Opcode.RET)
+                return
+
+            for body_expr in body[:-1]:
+                self.compile_expr(body_expr)
+                self.emit(Opcode.DROP)
+
+            self.compile_expr(body[-1])
+            self.emit(Opcode.RET)
+        finally:
+            self.local_scopes.pop()
 
     def compile_call(self, args: list[Expression]) -> None:
-        self.require_arg_count("call", args, 1)
+        if len(args) < 1:
+            raise TranslationError("call requires procedure name")
 
         target = args[0]
 
@@ -283,12 +332,45 @@ class Compiler:
             raise TranslationError("call argument must be a procedure name")
 
         name = target
+        actual_args = args[1:]
+
+        if name not in self.procedure_params:
+            raise TranslationError(f"Undefined procedure: {name}")
+
+        params = self.procedure_params[name]
+
+        if len(actual_args) != len(params):
+            raise TranslationError(
+                f"Procedure {name} requires {len(params)} arguments, "
+                f"got {len(actual_args)}"
+            )
+
+        for _, param_addr in params:
+            self.emit(Opcode.LOAD, param_addr)
+
+        for actual_expr in actual_args:
+            self.compile_expr(actual_expr)
+
+        for _, param_addr in reversed(params):
+            self.emit(Opcode.STORE, param_addr)
 
         if name in self.procedures:
             self.emit(Opcode.CALL, self.procedures[name])
         else:
             call_index = self.emit_placeholder(Opcode.CALL)
             self.pending_calls.append((call_index, name))
+
+        if not params:
+            return
+
+        result_addr = self.get_call_result_address()
+
+        self.emit(Opcode.STORE, result_addr)
+
+        for _, param_addr in reversed(params):
+            self.emit(Opcode.STORE, param_addr)
+
+        self.emit(Opcode.LOAD, result_addr)
 
     def compile_begin(self, args: list[Expression]) -> None:
         if not args:
@@ -306,7 +388,7 @@ class Compiler:
 
         self.compile_expr(args[0])
         self.emit(Opcode.DUP)
-        self.emit(Opcode.OUT, OUTPUT_PORT)
+        self.emit(Opcode.OUT, OUTPUT_CHAR_PORT)
 
     def compile_load_at(self, args: list[Expression]) -> None:
         self.require_arg_count("load-at", args, 1)
@@ -434,129 +516,9 @@ class Compiler:
 
     def compile_print_int(self, args: list[Expression]) -> None:
         self.require_arg_count("print-int", args, 1)
-
-        value_addr = self.get_variable_address("__print_int_value")
-        original_addr = self.get_variable_address("__print_int_original")
-        count_addr = self.get_variable_address("__print_int_digit_count")
-        ptr_addr = self.get_variable_address("__print_int_digits_ptr")
-
-        digits_addr = self.allocate_words(16)
-
         self.compile_expr(args[0])
         self.emit(Opcode.DUP)
-        self.emit(Opcode.STORE, original_addr)
-        self.emit(Opcode.STORE, value_addr)
-
-        self.emit(Opcode.LOAD, value_addr)
-        self.emit(Opcode.PUSHI, 0)
-        self.emit(Opcode.EQ)
-
-        jz_not_zero_index = self.emit_placeholder(Opcode.JZ)
-
-        self.emit(Opcode.PUSHI, ord("0"))
-        self.emit(Opcode.OUT, OUTPUT_PORT)
-
-        jmp_end_index = self.emit_placeholder(Opcode.JMP)
-
-        not_zero_addr = self.current_address()
-        self.patch_operand(jz_not_zero_index, not_zero_addr)
-
-        self.emit(Opcode.LOAD, value_addr)
-        self.emit(Opcode.PUSHI, 0)
-        self.emit(Opcode.LT)
-        jz_after_negative_index = self.emit_placeholder(Opcode.JZ)
-
-        self.emit(Opcode.PUSHI, ord("-"))
-        self.emit(Opcode.OUT, OUTPUT_PORT)
-
-        self.emit(Opcode.PUSHI, 0)
-        self.emit(Opcode.LOAD, value_addr)
-        self.emit(Opcode.SUB)
-        self.emit(Opcode.STORE, value_addr)
-
-        after_negative_addr = self.current_address()
-        self.patch_operand(jz_after_negative_index, after_negative_addr)
-
-        self.emit(Opcode.PUSHI, 0)
-        self.emit(Opcode.STORE, count_addr)
-
-        self.emit(Opcode.PUSHI, digits_addr)
-        self.emit(Opcode.STORE, ptr_addr)
-
-        collect_loop_start = self.current_address()
-
-        self.emit(Opcode.LOAD, value_addr)
-        self.emit(Opcode.PUSHI, 0)
-        self.emit(Opcode.GT)
-
-        jz_collect_end_index = self.emit_placeholder(Opcode.JZ)
-
-        self.emit(Opcode.LOAD, ptr_addr)
-        self.emit(Opcode.LOAD, value_addr)
-        self.emit(Opcode.PUSHI, 10)
-        self.emit(Opcode.MOD)
-        self.emit(Opcode.STOREI)
-
-        self.emit(Opcode.LOAD, ptr_addr)
-        self.emit(Opcode.PUSHI, 1)
-        self.emit(Opcode.ADD)
-        self.emit(Opcode.STORE, ptr_addr)
-
-        self.emit(Opcode.LOAD, count_addr)
-        self.emit(Opcode.PUSHI, 1)
-        self.emit(Opcode.ADD)
-        self.emit(Opcode.STORE, count_addr)
-
-        self.emit(Opcode.LOAD, value_addr)
-        self.emit(Opcode.PUSHI, 10)
-        self.emit(Opcode.DIV)
-        self.emit(Opcode.STORE, value_addr)
-
-        self.emit(Opcode.JMP, collect_loop_start)
-
-        collect_end_addr = self.current_address()
-        self.patch_operand(jz_collect_end_index, collect_end_addr)
-
-        self.emit(Opcode.LOAD, ptr_addr)
-        self.emit(Opcode.PUSHI, 1)
-        self.emit(Opcode.SUB)
-        self.emit(Opcode.STORE, ptr_addr)
-
-        print_loop_start = self.current_address()
-
-        self.emit(Opcode.LOAD, count_addr)
-        self.emit(Opcode.PUSHI, 0)
-        self.emit(Opcode.GT)
-
-        jz_print_end_index = self.emit_placeholder(Opcode.JZ)
-
-        self.emit(Opcode.LOAD, ptr_addr)
-        self.emit(Opcode.LOADI)
-        self.emit(Opcode.PUSHI, ord("0"))
-        self.emit(Opcode.ADD)
-        self.emit(Opcode.OUT, OUTPUT_PORT)
-
-        self.emit(Opcode.LOAD, ptr_addr)
-        self.emit(Opcode.PUSHI, 1)
-        self.emit(Opcode.SUB)
-        self.emit(Opcode.STORE, ptr_addr)
-
-        self.emit(Opcode.LOAD, count_addr)
-        self.emit(Opcode.PUSHI, 1)
-        self.emit(Opcode.SUB)
-        self.emit(Opcode.STORE, count_addr)
-
-        self.emit(Opcode.JMP, print_loop_start)
-
-        print_end_addr = self.current_address()
-        self.patch_operand(jz_print_end_index, print_end_addr)
-
-        # end:
-        end_addr = self.current_address()
-        self.patch_operand(jmp_end_index, end_addr)
-
-        # print-int returns original value
-        self.emit(Opcode.LOAD, original_addr)
+        self.emit(Opcode.OUT, OUTPUT_INT_PORT)
 
 
     # Arithmetic and comparison
@@ -629,8 +591,10 @@ class Compiler:
 
         self.compile_expr(args[0])  # pstr address
         self.compile_expr(args[1])  # zero-based index
+        self.emit(Opcode.PUSHI, DATA_WORD_SIZE_BYTES)
+        self.emit(Opcode.MUL)
         self.emit(Opcode.ADD)
-        self.emit(Opcode.PUSHI, 1)
+        self.emit(Opcode.PUSHI, DATA_WORD_SIZE_BYTES)
         self.emit(Opcode.ADD)
         self.emit(Opcode.LOADI)
 
@@ -639,8 +603,10 @@ class Compiler:
 
         self.compile_expr(args[0])  # pstr address
         self.compile_expr(args[1])  # zero-based index
+        self.emit(Opcode.PUSHI, DATA_WORD_SIZE_BYTES)
+        self.emit(Opcode.MUL)
         self.emit(Opcode.ADD)
-        self.emit(Opcode.PUSHI, 1)
+        self.emit(Opcode.PUSHI, DATA_WORD_SIZE_BYTES)
         self.emit(Opcode.ADD)
         self.compile_expr(args[2])  # value
         self.emit(Opcode.STOREI)
@@ -657,9 +623,9 @@ class Compiler:
         words = [len(chars), *chars]
 
         for offset, word in enumerate(words):
-            self.data_initial[start_addr + offset] = word
+            self.data_initial[start_addr + offset * DATA_WORD_SIZE_BYTES] = word
 
-        self.next_data_addr += len(words)
+        self.next_data_addr += len(words) * DATA_WORD_SIZE_BYTES
 
         return start_addr
 
@@ -675,9 +641,9 @@ class Compiler:
         self.emit(Opcode.LOADI)
         self.emit(Opcode.STORE, len_addr)
 
-        # ptr = ptr + 1
+        # ptr = ptr + DATA_WORD_SIZE_BYTES
         self.emit(Opcode.LOAD, ptr_addr)
-        self.emit(Opcode.PUSHI, 1)
+        self.emit(Opcode.PUSHI, DATA_WORD_SIZE_BYTES)
         self.emit(Opcode.ADD)
         self.emit(Opcode.STORE, ptr_addr)
 
@@ -693,11 +659,11 @@ class Compiler:
         # OUT memory[ptr]
         self.emit(Opcode.LOAD, ptr_addr)
         self.emit(Opcode.LOADI)
-        self.emit(Opcode.OUT, OUTPUT_PORT)
+        self.emit(Opcode.OUT, OUTPUT_CHAR_PORT)
 
-        # ptr = ptr + 1
+        # ptr = ptr + DATA_WORD_SIZE_BYTES
         self.emit(Opcode.LOAD, ptr_addr)
-        self.emit(Opcode.PUSHI, 1)
+        self.emit(Opcode.PUSHI, DATA_WORD_SIZE_BYTES)
         self.emit(Opcode.ADD)
         self.emit(Opcode.STORE, ptr_addr)
 
@@ -721,9 +687,69 @@ class Compiler:
             raise TranslationError(f"Cannot allocate negative number of words: {count}")
 
         start_addr = self.next_data_addr
-        self.next_data_addr += count
+        self.next_data_addr += count * DATA_WORD_SIZE_BYTES
 
         return start_addr
+
+    def parse_proc_definition(
+        self,
+        expression: list[Expression],
+    ) -> tuple[str, list[str], list[Expression]]:
+        if len(expression) < 2:
+            raise TranslationError("proc requires name and body")
+
+        name_expr = expression[1]
+
+        if not isinstance(name_expr, str) or is_string_literal(name_expr):
+            raise TranslationError("proc name must be a symbol")
+
+        name = name_expr
+        params: list[str] = []
+        body_start = 2
+
+        if len(expression) >= 3 and self.is_parameter_list(expression[2]):
+            raw_params = expression[2]
+            assert isinstance(raw_params, list)
+            params = list(raw_params)  # type: ignore[arg-type]
+            body_start = 3
+
+        if len(set(params)) != len(params):
+            raise TranslationError(f"Duplicate parameter name in procedure {name}")
+
+        return name, params, expression[body_start:]
+
+    @staticmethod
+    def is_parameter_list(expression: Expression) -> bool:
+        if not isinstance(expression, list):
+            return False
+
+        if expression and isinstance(expression[0], str) and expression[0] in SPECIAL_FORM_NAMES:
+            return False
+
+        return all(
+            isinstance(param, str) and not is_string_literal(param)
+            for param in expression
+        )
+
+    def declare_proc_signature(self, expression: list[Expression]) -> None:
+        name, params, _ = self.parse_proc_definition(expression)
+
+        if name in self.procedure_params:
+            raise TranslationError(f"Procedure already defined: {name}")
+
+        param_cells: list[tuple[str, int]] = []
+
+        for param in params:
+            address = self.get_global_variable_address(f"__proc_{name}_{param}")
+            param_cells.append((param, address))
+
+        self.procedure_params[name] = param_cells
+
+    def get_call_result_address(self) -> int:
+        if self.call_result_addr is None:
+            self.call_result_addr = self.get_global_variable_address("__call_result")
+
+        return self.call_result_addr
 
     def patch_pending_calls(self) -> None:
         for instruction_index, name in self.pending_calls:
@@ -760,23 +786,44 @@ class Compiler:
         if self.next_data_addr == 0:
             return []
 
-        data = [0] * self.next_data_addr
+        data = bytearray(self.next_data_addr)
 
         for address, value in self.data_initial.items():
-            data[address] = value
+            self.write_word_to_initial_data(data, address, value)
 
-        return data
+        return list(data)
+
+    @staticmethod
+    def write_word_to_initial_data(data: bytearray, address: int, value: int) -> None:
+        if address % DATA_WORD_SIZE_BYTES != 0:
+            raise TranslationError(f"Unaligned data address: {address}")
+
+        if address < 0 or address + DATA_WORD_SIZE_BYTES > len(data):
+            raise TranslationError(f"Data address out of range: {address}")
+
+        value &= 0xFFFFFFFF
+        data[address:address + DATA_WORD_SIZE_BYTES] = value.to_bytes(
+            DATA_WORD_SIZE_BYTES,
+            byteorder="little",
+            signed=False,
+        )
 
     def get_variable_address(self, name: str) -> int:
+        for scope in reversed(self.local_scopes):
+            if name in scope:
+                return scope[name]
+
+        return self.get_global_variable_address(name)
+
+    def get_global_variable_address(self, name: str) -> int:
         if name not in self.variables:
             self.variables[name] = self.next_data_addr
-            self.next_data_addr += 1
+            self.next_data_addr += DATA_WORD_SIZE_BYTES
 
         return self.variables[name]
 
     def emit(self, opcode: Opcode, operand: int = 0) -> int:
         self.instructions.append(Instruction(opcode, operand))
-        # возвращаем адрес только что добавленной инструкции
         return len(self.instructions) - 1
 
     def emit_placeholder(self, opcode: Opcode) -> int:
@@ -790,7 +837,7 @@ class Compiler:
         )
 
     def current_address(self) -> int:
-        return len(self.instructions)
+        return len(self.instructions) * INSTRUCTION_SIZE_BYTES
 
     @staticmethod
     def require_arg_count(name: str, args: list[Expression], expected: int) -> None:
@@ -799,8 +846,6 @@ class Compiler:
                 f"{name} requires {expected} arguments, got {len(args)}"
             )
 
-
-# Public API
 @dataclass(frozen=True)
 class TranslationResult:
     instructions: list[Instruction]

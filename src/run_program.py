@@ -21,9 +21,9 @@ def main() -> None:
     parser.add_argument("--input", default=None, help="Optional input stream file")
     parser.add_argument("--out-dir", default="build", help="Directory for generated files")
     parser.add_argument("--tick-limit", type=int, default=100_000_000, help="Machine tick limit")
-    parser.add_argument("--data-memory-size", type=int, default=None, help="Optional data memory size")
-    parser.add_argument("--translator", default="src/translator.py", help="Path to translator.py")
-    parser.add_argument("--machine", default="src/machine.py", help="Path to machine.py")
+    parser.add_argument("--data-memory-size", type=int, default=None, help="Optional data memory size in bytes")
+    parser.add_argument("--translator", default="translator.py", help="Path to translator.py")
+    parser.add_argument("--machine", default="machine.py", help="Path to machine.py")
     parser.add_argument(
         "--interrupt-ticks",
         default="",
@@ -32,7 +32,7 @@ def main() -> None:
     parser.add_argument(
         "--interrupt-symbol",
         default="!",
-        help="One character placed into data_memory[0x01] when interrupt fires",
+        help="One character placed into data_memory[0x04] when interrupt fires",
     )
 
 

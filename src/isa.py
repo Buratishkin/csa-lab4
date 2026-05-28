@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 INSTRUCTION_SIZE_BYTES = 4
+DATA_WORD_SIZE_BYTES = 4
 
 OPCODE_BITS = 8
 OPERAND_BITS = 24
@@ -265,7 +266,7 @@ def read_code(filename: str | Path) -> list[Instruction]:
 
 def write_disasm(filename: str | Path, instructions: list[Instruction]) -> None:
     lines = [
-        instruction.disasm(address)
+        instruction.disasm(address * INSTRUCTION_SIZE_BYTES)
         for address, instruction in enumerate(instructions)
     ]
 

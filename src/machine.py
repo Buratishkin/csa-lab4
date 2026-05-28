@@ -5,17 +5,21 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from src.isa import Instruction, read_code
+from src.isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES, Instruction, read_code
 from src.microcode import MicroOp, get_microprogram
 
-DEFAULT_DATA_MEMORY_SIZE = 4096
+DEFAULT_DATA_MEMORY_SIZE = 4096 * DATA_WORD_SIZE_BYTES
 DEFAULT_TICK_LIMIT = 100_000
 
 INPUT_PORT = 0
-OUTPUT_PORT = 1
+OUTPUT_CHAR_PORT = 1
+OUTPUT_INT_PORT = 2
+
+# Backward-compatible alias: old code used OUTPUT_PORT for character output.
+OUTPUT_PORT = OUTPUT_CHAR_PORT
 
 INTERRUPT_VECTOR_ADDR = 0x00
-INTERRUPT_DEVICE_CELL = 0x01
+INTERRUPT_DEVICE_CELL = DATA_WORD_SIZE_BYTES
 
 # DataPath
 @dataclass
@@ -24,7 +28,7 @@ class DataPath:
     input_text: str = ""
     initial_data_memory: list[int] | None = None
 
-    data_memory: list[int] = field(init=False)
+    data_memory: bytearray = field(init=False)
 
     data_stack: list[int] = field(default_factory=list)
     return_stack: list[int] = field(default_factory=list)
@@ -38,7 +42,7 @@ class DataPath:
     negative_flag: bool = False
 
     def __post_init__(self) -> None:
-        self.data_memory = [0] * self.data_memory_size
+        self.data_memory = bytearray(self.data_memory_size)
 
         if self.initial_data_memory is not None:
             if len(self.initial_data_memory) > self.data_memory_size:
@@ -48,7 +52,9 @@ class DataPath:
                 )
 
             for address, value in enumerate(self.initial_data_memory):
-                self.data_memory[address] = self.normalize_word(value)
+                if not 0 <= int(value) <= 0xFF:
+                    raise RuntimeError(f"Initial data byte out of range at {address}: {value}")
+                self.data_memory[address] = int(value)
 
         self.input_buffer = [ord(ch) for ch in self.input_text]
 
@@ -109,16 +115,28 @@ class DataPath:
 
     # data memory
     def check_data_addr(self, address: int) -> None:
-        if not 0 <= address < len(self.data_memory):
+        if address % DATA_WORD_SIZE_BYTES != 0:
+            raise RuntimeError(f"Unaligned data memory address: {address}")
+
+        if not 0 <= address <= len(self.data_memory) - DATA_WORD_SIZE_BYTES:
             raise RuntimeError(f"Data memory address out of range: {address}")
 
     def read_memory(self, address: int) -> int:
         self.check_data_addr(address)
-        return self.data_memory[address]
+        return int.from_bytes(
+            self.data_memory[address:address + DATA_WORD_SIZE_BYTES],
+            byteorder="little",
+            signed=True,
+        )
 
     def write_memory(self, address: int, value: int) -> None:
         self.check_data_addr(address)
-        self.data_memory[address] = self.normalize_word(value)
+        value = self.normalize_word(value)
+        self.data_memory[address:address + DATA_WORD_SIZE_BYTES] = value.to_bytes(
+            DATA_WORD_SIZE_BYTES,
+            byteorder="little",
+            signed=True,
+        )
 
     # ports
     def read_port(self, port: int) -> int:
@@ -131,10 +149,19 @@ class DataPath:
         return self.input_buffer.pop(0)
 
     def write_port(self, port: int, value: int) -> None:
-        if port != OUTPUT_PORT:
-            raise RuntimeError(f"Unknown output port: {port}")
+        if port == OUTPUT_CHAR_PORT:
+            self.output_buffer.append(value & 0xFF)
+            return
 
-        self.output_buffer.append(value & 0xFF)
+        if port == OUTPUT_INT_PORT:
+            text = str(self.normalize_word(value))
+
+            for ch in text:
+                self.output_buffer.append(ord(ch))
+
+            return
+
+        raise RuntimeError(f"Unknown output port: {port}")
 
     def output_text(self) -> str:
         return "".join(chr(value) for value in self.output_buffer)
@@ -222,7 +249,11 @@ class ControlUnit:
                 f"data_memory[{INTERRUPT_VECTOR_ADDR:#04x}] == 0"
             )
 
-        if not 0 <= handler_addr < len(self.instruction_memory):
+        if handler_addr % INSTRUCTION_SIZE_BYTES != 0:
+            raise RuntimeError(f"Unaligned interrupt handler address: {handler_addr}")
+
+        code_size = len(self.instruction_memory) * INSTRUCTION_SIZE_BYTES
+        if not 0 <= handler_addr < code_size:
             raise RuntimeError(f"Interrupt handler address out of range: {handler_addr}")
 
         self.interrupt_stack.append(
@@ -271,10 +302,15 @@ class ControlUnit:
 
     # fetch/decode
     def fetch_instruction(self) -> None:
-        if not 0 <= self.pc < len(self.instruction_memory):
+        if self.pc % INSTRUCTION_SIZE_BYTES != 0:
+            raise RuntimeError(f"Unaligned PC: {self.pc}")
+
+        code_size = len(self.instruction_memory) * INSTRUCTION_SIZE_BYTES
+        if not 0 <= self.pc < code_size:
             raise RuntimeError(f"PC out of instruction memory: {self.pc}")
 
-        self.ir = self.instruction_memory[self.pc]
+        instruction_index = self.pc // INSTRUCTION_SIZE_BYTES
+        self.ir = self.instruction_memory[instruction_index]
         self.current_microprogram = get_microprogram(self.ir.opcode)
         self.mpc = 0
 
@@ -386,7 +422,7 @@ class ControlUnit:
                 if condition == 0:
                     self.pc = self.ir.operand
                 else:
-                    self.pc += 1
+                    self.pc += INSTRUCTION_SIZE_BYTES
                 self.finish_instruction()
 
             case MicroOp.JNZ:
@@ -394,11 +430,11 @@ class ControlUnit:
                 if condition != 0:
                     self.pc = self.ir.operand
                 else:
-                    self.pc += 1
+                    self.pc += INSTRUCTION_SIZE_BYTES
                 self.finish_instruction()
 
             case MicroOp.CALL:
-                dp.push_return(self.pc + 1)
+                dp.push_return(self.pc + INSTRUCTION_SIZE_BYTES)
                 self.pc = self.ir.operand
                 self.finish_instruction()
 
@@ -407,14 +443,14 @@ class ControlUnit:
                 self.finish_instruction()
 
             case MicroOp.INC_PC:
-                self.pc += 1
+                self.pc += INSTRUCTION_SIZE_BYTES
                 self.mpc += 1
 
             # Interrupts
             case MicroOp.INT:
                 self.enter_interrupt(
                     event_name="SW_INT",
-                    return_pc=self.pc + 1,
+                    return_pc=self.pc + INSTRUCTION_SIZE_BYTES,
                 )
 
             case MicroOp.IRET:
@@ -422,12 +458,12 @@ class ControlUnit:
 
             case MicroOp.EI:
                 self.interrupt_enable = True
-                self.pc += 1
+                self.pc += INSTRUCTION_SIZE_BYTES
                 self.finish_instruction()
 
             case MicroOp.DI:
                 self.interrupt_enable = False
-                self.pc += 1
+                self.pc += INSTRUCTION_SIZE_BYTES
                 self.finish_instruction()
 
             # Port-mapped I/O
@@ -518,7 +554,7 @@ class ControlUnit:
 
 
 
-# Simulation API
+# simulation
 @dataclass(frozen=True)
 class SimulationResult:
     output: str
@@ -562,7 +598,7 @@ def simulation(
         halt_reason=control_unit.halt_reason,
         data_stack=datapath.stack_snapshot(),
         return_stack=datapath.return_stack.copy(),
-        data_memory=datapath.data_memory.copy(),
+        data_memory=list(datapath.data_memory),
         interrupts_handled=control_unit.interrupts_handled,
     )
 
@@ -676,7 +712,7 @@ def main() -> None:
         "--data-memory-size",
         type=int,
         default=DEFAULT_DATA_MEMORY_SIZE,
-        help="Data memory size in 32-bit words.",
+        help="Data memory size in bytes.",
     )
     parser.add_argument(
         "--interrupt-ticks",
