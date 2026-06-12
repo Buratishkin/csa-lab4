@@ -9,9 +9,9 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.machine import simulation
-from src.translator import translate_source
-from src.isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES
+from srу.machine import simulation
+from srу.translator import translate_source
+from srу.isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES
 
 
 GOLDEN_DIR = PROJECT_ROOT / "golden"
@@ -115,7 +115,6 @@ def stdout_text(result):
     text = (
         f"Ticks: {result.ticks}\n"
         f"Halt reason: {result.halt_reason}\n"
-        f"Interrupts handled: {result.interrupts_handled}\n"
         f"{'=' * 106}\n"
         f"{result.output}"
     )
@@ -128,30 +127,6 @@ def stdout_text(result):
 
 def load_golden_files():
     return sorted(GOLDEN_DIR.glob("*.yml"))
-
-def parse_interrupt_ticks(value):
-    if value is None:
-        return []
-
-    value = str(value).strip()
-
-    if value == "":
-        return []
-
-    return [
-        int(item.strip())
-        for item in value.split(",")
-        if item.strip()
-    ]
-
-
-def parse_interrupt_symbol(value):
-    value = str(value)
-
-    if len(value) != 1:
-        raise AssertionError("in_interrupt_symbol must contain exactly one character")
-
-    return ord(value)
 
 @pytest.mark.parametrize("golden_path", load_golden_files())
 def test_translator_and_machine(golden_path):
@@ -166,13 +141,9 @@ def test_translator_and_machine(golden_path):
         instructions=translation.instructions,
         input_text=stdin,
         initial_data_memory=translation.data_memory,
-        tick_limit=RUN_TICK_LIMIT,
-        interrupt_ticks=parse_interrupt_ticks(golden.get("in_interrupt_ticks", "")),
-        interrupt_device_symbol=parse_interrupt_symbol(golden.get("in_interrupt_symbol", "!")),
+        tick_limit=RUN_TICK_LIMIT
     )
 
-    # Память команд в человекочитаемом виде.
-    # Проверяем инструкции только до байтового адреса 400 включительно.
     actual_code_hex = code_hex_text(
         translation.instructions,
         max_address=MAX_DISASM_ADDRESS,
@@ -184,9 +155,6 @@ def test_translator_and_machine(golden_path):
 
     assert_limited_text_equal(actual_code_hex, expected_code_hex)
 
-    # Финальная память данных.
-    # Проверяем только первые n байт, где n = размер .data.json,
-    # но в golden-файле отображаем их группами по машинным словам.
     data_len = len(translation.data_memory)
     final_data_prefix = result.data_memory[:data_len]
 
@@ -198,10 +166,6 @@ def test_translator_and_machine(golden_path):
     # stdout машины
     assert stdout_text(result) == golden["out_stdout"]
 
-    # log машины.
-    # Проверяем лог только до TICK=400 включительно.
-    # ВАЖНО: сама машина запускается без ограничения 400 тиков,
-    # иначе stdout получит Halt reason: Tick limit exceeded.
     actual_log = filter_log_by_max_tick(
         "\n".join(result.log),
         max_tick=MAX_LOG_TICK,

@@ -4,24 +4,40 @@ import argparse
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from src.isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES, Instruction, read_code
-from src.microcode import MicroOp, get_microprogram
+import isa as _isa
+
+import microcode as _microcode
+
+
+DATA_WORD_SIZE_BYTES = _isa.DATA_WORD_SIZE_BYTES
+INSTRUCTION_SIZE_BYTES = _isa.INSTRUCTION_SIZE_BYTES
+Instruction = _isa.Instruction
+Opcode = _isa.Opcode
+read_code = _isa.read_code
+
+ALUSignal = _microcode.ALUSignal
+ControlSignal = _microcode.ControlSignal
+FETCH_ADDR = _microcode.FETCH_ADDR
+MICROPROGRAM = _microcode.MICROPROGRAM
+MPC_OF_OPCODE = _microcode.MPC_OF_OPCODE
+MicroInstruction = _microcode.MicroInstruction
+MuxSignal = _microcode.MuxSignal
+Signal = _microcode.Signal
 
 DEFAULT_DATA_MEMORY_SIZE = 4096 * DATA_WORD_SIZE_BYTES
-DEFAULT_TICK_LIMIT = 100_000
+DEFAULT_TICK_LIMIT = 10_000_000
 
 INPUT_PORT = 0
 OUTPUT_CHAR_PORT = 1
 OUTPUT_INT_PORT = 2
-
-# Backward-compatible alias: old code used OUTPUT_PORT for character output.
 OUTPUT_PORT = OUTPUT_CHAR_PORT
 
-INTERRUPT_VECTOR_ADDR = 0x00
-INTERRUPT_DEVICE_CELL = DATA_WORD_SIZE_BYTES
+EMPTY_SP = -DATA_WORD_SIZE_BYTES
+EMPTY_R = -DATA_WORD_SIZE_BYTES
 
-# DataPath
+
 @dataclass
 class DataPath:
     data_memory_size: int = DEFAULT_DATA_MEMORY_SIZE
@@ -36,10 +52,24 @@ class DataPath:
     input_buffer: list[int] = field(init=False)
     output_buffer: list[int] = field(default_factory=list)
 
-    reg_a: int = 0
-    reg_b: int = 0
     zero_flag: bool = False
     negative_flag: bool = False
+
+    sp: int = EMPTY_SP
+    t: int = 0
+    f: int = 0
+    ar: int = 0
+
+    selected_stack_addr: int = EMPTY_SP
+    addr_mux_value: int = 0
+    stack_mux_value: int = 0
+    input_latch: int = 0
+    alu_result: int = 0
+
+    next_sp: int | None = None
+    next_t: int | None = None
+    next_f: int | None = None
+    next_ar: int | None = None
 
     def __post_init__(self) -> None:
         self.data_memory = bytearray(self.data_memory_size)
@@ -57,6 +87,7 @@ class DataPath:
                 self.data_memory[address] = int(value)
 
         self.input_buffer = [ord(ch) for ch in self.input_text]
+        self._resync_signal_stack_from_list()
 
     @staticmethod
     def normalize_word(value: int) -> int:
@@ -72,21 +103,17 @@ class DataPath:
         self.zero_flag = value == 0
         self.negative_flag = value < 0
 
-    # data stack
     def push(self, value: int) -> None:
-        """
-        Push value to the data stack.
-        """
         self.data_stack.append(self.normalize_word(value))
+        self._resync_signal_stack_from_list()
 
     def pop(self) -> int:
-        """
-        Pop value from the data stack.
-        """
         if not self.data_stack:
             raise RuntimeError("Data stack underflow")
 
-        return self.data_stack.pop()
+        value = self.data_stack.pop()
+        self._resync_signal_stack_from_list()
+        return value
 
     def peek(self) -> int:
         if not self.data_stack:
@@ -95,23 +122,84 @@ class DataPath:
         return self.data_stack[-1]
 
     def stack_snapshot(self) -> list[int]:
-        """
-        Return stack content from bottom to top.
-        """
         return self.data_stack.copy()
 
     def stack_top_snapshot(self, limit: int = 6) -> list[int]:
         return self.stack_snapshot()[-limit:]
 
-    # return stack
-    def push_return(self, address: int) -> None:
-        self.return_stack.append(address)
+    def _resync_signal_stack_from_list(self) -> None:
+        self.sp = (len(self.data_stack) - 1) * DATA_WORD_SIZE_BYTES if self.data_stack else EMPTY_SP
+        self.t = self.data_stack[-1] if self.data_stack else 0
 
-    def pop_return(self) -> int:
-        if not self.return_stack:
-            raise RuntimeError("Return stack underflow")
+    def start_cycle(self) -> None:
+        self.next_sp = self.sp
+        self.next_t = self.t
+        self.next_f = self.f
+        self.next_ar = self.ar
+        self.selected_stack_addr = self.sp
+        self.addr_mux_value = self.ar
+        self.stack_mux_value = 0
+        self.input_latch = 0
 
-        return self.return_stack.pop()
+    def update(self) -> None:
+        assert self.next_sp is not None
+        assert self.next_t is not None
+        assert self.next_f is not None
+        assert self.next_ar is not None
+
+        self.sp = self.next_sp
+        self.t = self.normalize_word(self.next_t)
+        self.f = self.normalize_word(self.next_f)
+        self.ar = self.next_ar
+
+        self._truncate_stack_to_sp()
+
+        if self.sp == EMPTY_SP:
+            self.t = 0
+        elif self.data_stack:
+            top_index = self.sp_to_index(self.sp)
+            self.ensure_stack_index(top_index)
+            self.data_stack[top_index] = self.normalize_word(self.t)
+
+        self.next_sp = None
+        self.next_t = None
+        self.next_f = None
+        self.next_ar = None
+
+    def _truncate_stack_to_sp(self) -> None:
+        if self.sp == EMPTY_SP:
+            self.data_stack.clear()
+            return
+
+        if self.sp < EMPTY_SP or self.sp % DATA_WORD_SIZE_BYTES != 0:
+            raise RuntimeError(f"Invalid SP value: {self.sp}")
+
+        new_len = self.sp_to_index(self.sp) + 1
+        del self.data_stack[new_len:]
+
+    @staticmethod
+    def sp_to_index(address: int) -> int:
+        if address % DATA_WORD_SIZE_BYTES != 0:
+            raise RuntimeError(f"Unaligned stack address: {address}")
+        return address // DATA_WORD_SIZE_BYTES
+
+    def ensure_stack_index(self, index: int) -> None:
+        if index < 0:
+            raise RuntimeError(f"Stack address is below zero: {index * DATA_WORD_SIZE_BYTES}")
+        while len(self.data_stack) <= index:
+            self.data_stack.append(0)
+
+    def read_stack_address(self, address: int, *, allow_empty_previous: bool = True) -> int:
+        if address == EMPTY_SP and allow_empty_previous:
+            return 0
+
+        index = self.sp_to_index(address)
+        if not 0 <= index < len(self.data_stack):
+            if allow_empty_previous:
+                return 0
+            raise RuntimeError(f"Stack address out of range: {address}")
+
+        return self.data_stack[index]
 
     # data memory
     def check_data_addr(self, address: int) -> None:
@@ -166,6 +254,113 @@ class DataPath:
     def output_text(self) -> str:
         return "".join(chr(value) for value in self.output_buffer)
 
+    # selectors / latches used by microinstructions
+    def select_stack_addr(self, selector: Any) -> None:
+        if selector == MuxSignal.SEL_STACK_ADDR_CURRENT:
+            self.selected_stack_addr = self.sp
+        elif selector == MuxSignal.SEL_STACK_ADDR_NEXT:
+            self.selected_stack_addr = self.sp + DATA_WORD_SIZE_BYTES
+        else:
+            raise RuntimeError(f"Invalid stack address selector: {selector}")
+
+    def select_data_address(self, selector: Any, operand: int) -> None:
+        if selector == MuxSignal.SEL_ADDR_OPERAND:
+            self.addr_mux_value = operand
+        elif selector == MuxSignal.SEL_ADDR_T:
+            self.addr_mux_value = self.t
+        else:
+            raise RuntimeError(f"Invalid data address selector: {selector}")
+
+    def latch_ar(self) -> None:
+        self.next_ar = self.addr_mux_value
+
+    def stack_mux(self, selector: Any, operand: int) -> int:
+        if selector == MuxSignal.SEL_STACK_IMM:
+            return operand
+        if selector == MuxSignal.SEL_STACK_MEMORY:
+            return self.read_memory(self.ar)
+        if selector == MuxSignal.SEL_STACK_ALU:
+            return self.alu_result
+        if selector == MuxSignal.SEL_STACK_INPUT:
+            return self.input_latch
+        if selector == MuxSignal.SEL_STACK_T:
+            return self.t
+
+        raise RuntimeError(f"Invalid stack mux selector: {selector}")
+
+    def write_stack(self, selector: Any, operand: int) -> None:
+        value = self.normalize_word(self.stack_mux(selector, operand))
+        index = self.sp_to_index(self.selected_stack_addr)
+        self.ensure_stack_index(index)
+        self.data_stack[index] = value
+        self.stack_mux_value = value
+
+    def latch_sp(self, selector: Any) -> None:
+        if selector == MuxSignal.SEL_SP_NEXT:
+            self.next_sp = self.sp + DATA_WORD_SIZE_BYTES
+        elif selector == MuxSignal.SEL_SP_PREV:
+            self.next_sp = self.sp - DATA_WORD_SIZE_BYTES
+        else:
+            raise RuntimeError(f"Invalid SP selector: {selector}")
+
+    def latch_t(self, selector: Any) -> None:
+        if selector == MuxSignal.SEL_T_STACK_MUX:
+            self.next_t = self.stack_mux_value
+        elif selector == MuxSignal.SEL_T_STACK_PREV:
+            self.next_t = self.read_stack_address(self.sp - DATA_WORD_SIZE_BYTES)
+        else:
+            raise RuntimeError(f"Invalid T selector: {selector}")
+
+    def latch_f(self, selector: Any) -> None:
+        if selector == MuxSignal.SEL_F_T:
+            self.next_f = self.t
+        else:
+            raise RuntimeError(f"Invalid F selector: {selector}")
+
+    def write_data_memory_by_selector(self, selector: Any) -> None:
+        if selector == MuxSignal.SEL_DATA_IN_T:
+            value = self.t
+        else:
+            raise RuntimeError(f"Invalid data input selector: {selector}")
+
+        self.write_memory(self.ar, value)
+
+    def alu(self, selector: Any) -> None:
+        left = self.t
+        right = self.f
+
+        match selector:
+            case ALUSignal.ADD:
+                result = left + right
+            case ALUSignal.SUB:
+                result = left - right
+            case ALUSignal.MUL:
+                result = left * right
+            case ALUSignal.DIV:
+                if right == 0:
+                    raise RuntimeError("Division by zero")
+                result = int(left / right)
+            case ALUSignal.MOD:
+                if right == 0:
+                    raise RuntimeError("Modulo by zero")
+                result = left % right
+            case ALUSignal.EQ:
+                result = int(left == right)
+            case ALUSignal.NE:
+                result = int(left != right)
+            case ALUSignal.LT:
+                result = int(left < right)
+            case ALUSignal.GT:
+                result = int(left > right)
+            case ALUSignal.LE:
+                result = int(left <= right)
+            case ALUSignal.GE:
+                result = int(left >= right)
+            case _:
+                raise RuntimeError(f"Unknown ALU selector: {selector}")
+
+        self.alu_result = self.normalize_word(result)
+
 
 @dataclass
 class ControlUnit:
@@ -174,27 +369,22 @@ class ControlUnit:
 
     pc: int = 0
     ir: Instruction | None = None
-    mpc: int = 0
+    mpc: int = FETCH_ADDR
+    r: int = EMPTY_R
 
     tick: int = 0
     halted: bool = False
     halt_reason: str = ""
 
-    current_microprogram: list[MicroOp] = field(default_factory=list)
     log: list[str] = field(default_factory=list)
 
-    interrupt_ticks: list[int] = field(default_factory=list)
-    interrupt_device_symbol: int = ord("!")
-    interrupt_enable: bool = False
-    inside_interrupt: bool = False
-    interrupt_stack: list[dict[str, object]] = field(default_factory=list)
-    next_interrupt_index: int = 0
-    interrupts_handled: int = 0
-    last_interrupt_event: str = "-"
     last_alu_result: int = 0
 
-    def __post_init__(self) -> None:
-        self.interrupt_ticks = sorted(int(tick) for tick in self.interrupt_ticks)
+    selected_return_addr: int = EMPTY_R
+    next_pc: int | None = None
+    next_mpc: int | None = None
+    next_ir: Instruction | None = None
+    next_r: int | None = None
 
     def run(self, tick_limit: int = DEFAULT_TICK_LIMIT) -> None:
         while not self.halted and self.tick < tick_limit:
@@ -206,102 +396,134 @@ class ControlUnit:
 
     def step_tick(self) -> None:
         self.tick += 1
-        self.last_interrupt_event = "-"
-        if self.ir is None and self.should_fire_hardware_interrupt():
-            self.enter_interrupt(event_name="HW_INTERRUPT", return_pc=self.pc)
-            self.write_log("HW_INTERRUPT")
-            return
+        current_mpc = self.mpc
 
-        if self.ir is None:
-            self.fetch_instruction()
-            self.write_log("FETCH")
-            return
+        if current_mpc < 0 or current_mpc >= len(MICROPROGRAM):
+            raise RuntimeError(f"MPC out of range: {current_mpc}")
 
-        if self.mpc < 0 or self.mpc >= len(self.current_microprogram):
-            raise RuntimeError(f"MPC out of range: {self.mpc}")
+        microinstruction = MICROPROGRAM[current_mpc]
+        self.start_cycle(current_mpc)
 
-        micro_op = self.current_microprogram[self.mpc]
-        self.execute_micro_op(micro_op)
-        self.write_log(micro_op.value)
+        try:
+            for control_signal in microinstruction:
+                self.dispatch(control_signal)
+        except StopIteration:
+            self.halted = True
+            self.halt_reason = "Input stream exhausted"
 
-    def should_fire_hardware_interrupt(self) -> bool:
-        if not self.interrupt_enable or self.inside_interrupt:
-            return False
+        self.update_after_cycle()
+        self.write_log(current_mpc, microinstruction)
 
-        if self.next_interrupt_index >= len(self.interrupt_ticks):
-            return False
+    def start_cycle(self, current_mpc: int) -> None:
+        self.datapath.start_cycle()
+        self.selected_return_addr = self.r
+        self.next_pc = self.pc
+        self.next_mpc = current_mpc
+        self.next_ir = self.ir
+        self.next_r = self.r
 
-        scheduled_tick = self.interrupt_ticks[self.next_interrupt_index]
+    def update_after_cycle(self) -> None:
+        assert self.next_pc is not None
+        assert self.next_mpc is not None
+        assert self.next_r is not None
 
-        if self.tick < scheduled_tick:
-            return False
+        self.datapath.update()
+        self.pc = self.next_pc
+        self.mpc = self.next_mpc
+        self.r = self.next_r
+        self.truncate_return_stack_to_r()
 
-        self.next_interrupt_index += 1
-        return True
+        # Returning to FETCH means that the previous instruction is complete.
+        if self.mpc == FETCH_ADDR and self.next_ir is self.ir:
+            self.ir = None
+        else:
+            self.ir = self.next_ir
 
-    def enter_interrupt(self, event_name: str, return_pc: int) -> None:
-        dp = self.datapath
-        handler_addr = dp.read_memory(INTERRUPT_VECTOR_ADDR)
+        self.next_pc = None
+        self.next_mpc = None
+        self.next_ir = None
+        self.next_r = None
+        self.last_alu_result = self.datapath.alu_result
 
-        if handler_addr == 0:
-            raise RuntimeError(
-                "Interrupt vector is not set: "
-                f"data_memory[{INTERRUPT_VECTOR_ADDR:#04x}] == 0"
-            )
-
-        if handler_addr % INSTRUCTION_SIZE_BYTES != 0:
-            raise RuntimeError(f"Unaligned interrupt handler address: {handler_addr}")
-
-        code_size = len(self.instruction_memory) * INSTRUCTION_SIZE_BYTES
-        if not 0 <= handler_addr < code_size:
-            raise RuntimeError(f"Interrupt handler address out of range: {handler_addr}")
-
-        self.interrupt_stack.append(
-            {
-                "pc": return_pc,
-                "reg_a": dp.reg_a,
-                "reg_b": dp.reg_b,
-                "zero_flag": dp.zero_flag,
-                "negative_flag": dp.negative_flag,
-                "data_stack": dp.data_stack.copy(),
-                "return_stack": dp.return_stack.copy(),
-                "interrupt_enable": self.interrupt_enable,
-            }
-        )
-
-        self.interrupt_enable = False
-        self.inside_interrupt = True
-        self.interrupts_handled += 1
-        self.last_interrupt_event = f"{event_name}->handler@{handler_addr}"
-
-        dp.write_memory(INTERRUPT_DEVICE_CELL, self.interrupt_device_symbol)
-
-        self.pc = handler_addr
-        self.finish_instruction()
-
-    def return_from_interrupt(self) -> None:
-        if not self.interrupt_stack:
-            raise RuntimeError("Interrupt stack underflow")
-
-        state = self.interrupt_stack.pop()
+    # signal dispatch
+    def dispatch(self, control_signal: ControlSignal) -> None:
+        signal = control_signal.signal
+        selector = control_signal.selector
         dp = self.datapath
 
-        self.pc = int(state["pc"])
-        dp.reg_a = int(state["reg_a"])
-        dp.reg_b = int(state["reg_b"])
-        dp.zero_flag = bool(state["zero_flag"])
-        dp.negative_flag = bool(state["negative_flag"])
-        dp.data_stack = list(state["data_stack"])  # type: ignore[arg-type]
-        dp.return_stack = list(state["return_stack"])  # type: ignore[arg-type]
+        match signal:
+            case Signal.LATCH_IR:
+                self.next_ir = self.fetch_instruction_at_pc()
 
-        self.interrupt_enable = bool(state["interrupt_enable"])
-        self.inside_interrupt = False
-        self.last_interrupt_event = "IRET"
+            case Signal.LATCH_MPC:
+                self.latch_mpc(selector)
 
-        self.finish_instruction()
+            case Signal.LATCH_PC:
+                self.latch_pc(selector)
 
-    # fetch/decode
-    def fetch_instruction(self) -> None:
+            case Signal.LATCH_SP:
+                dp.latch_sp(selector)
+
+            case Signal.LATCH_T:
+                dp.latch_t(selector)
+
+            case Signal.LATCH_F:
+                dp.latch_f(selector)
+
+            case Signal.LATCH_AR:
+                dp.latch_ar()
+
+            case Signal.SELECT_STACK_ADDR:
+                dp.select_stack_addr(selector)
+
+            case Signal.WRITE_STACK:
+                if self.next_ir is None:
+                    raise RuntimeError("IR is empty for WRITE_STACK")
+                dp.write_stack(selector, self.next_ir.operand)
+
+            case Signal.SELECT_DATA_ADDRESS:
+                if self.next_ir is None:
+                    raise RuntimeError("IR is empty for SELECT_DATA_ADDRESS")
+                dp.select_data_address(selector, self.next_ir.operand)
+
+            case Signal.WRITE_DATA_MEMORY:
+                dp.write_data_memory_by_selector(selector)
+
+            case Signal.ALU:
+                dp.alu(selector)
+
+            case Signal.LATCH_NZ:
+                dp.set_flags(dp.alu_result)
+
+            case Signal.SELECT_RETURN_STACK_ADDR:
+                self.select_return_stack_addr(selector)
+
+            case Signal.WRITE_RETURN_STACK:
+                self.write_return_stack(selector)
+
+            case Signal.LATCH_R:
+                self.latch_r(selector)
+
+            case Signal.READ_IO:
+                if self.next_ir is None:
+                    raise RuntimeError("IR is empty for READ_IO")
+                port = self.port_from_selector(selector, self.next_ir.operand)
+                dp.input_latch = dp.read_port(port)
+
+            case Signal.WRITE_IO:
+                if self.next_ir is None:
+                    raise RuntimeError("IR is empty for WRITE_IO")
+                port = self.port_from_selector(selector, self.next_ir.operand)
+                dp.write_port(port, dp.t)
+
+            case Signal.HALT:
+                self.halted = True
+                self.halt_reason = "HALT instruction"
+
+            case _:
+                raise RuntimeError(f"Unknown control signal: {control_signal}")
+
+    def fetch_instruction_at_pc(self) -> Instruction:
         if self.pc % INSTRUCTION_SIZE_BYTES != 0:
             raise RuntimeError(f"Unaligned PC: {self.pc}")
 
@@ -310,201 +532,123 @@ class ControlUnit:
             raise RuntimeError(f"PC out of instruction memory: {self.pc}")
 
         instruction_index = self.pc // INSTRUCTION_SIZE_BYTES
-        self.ir = self.instruction_memory[instruction_index]
-        self.current_microprogram = get_microprogram(self.ir.opcode)
-        self.mpc = 0
+        return self.instruction_memory[instruction_index]
 
-    def finish_instruction(self) -> None:
-        self.ir = None
-        self.current_microprogram = []
-        self.mpc = 0
+    def current_instruction_for_decode(self) -> Instruction:
+        instruction = self.next_ir or self.ir
+        if instruction is None:
+            raise RuntimeError("Cannot decode opcode: IR is empty")
+        return instruction
 
-    # micro-op execution
-    def execute_micro_op(self, micro_op: MicroOp) -> None:
-        if self.ir is None:
-            raise RuntimeError("IR is empty")
+    def latch_mpc(self, selector: Any) -> None:
+        if selector == MuxSignal.SEL_MPC_NEXT:
+            assert self.next_mpc is not None
+            self.next_mpc = self.next_mpc + 1
+            return
 
+        if selector == MuxSignal.SEL_MPC_FETCH:
+            self.next_mpc = FETCH_ADDR
+            return
+
+        if selector == MuxSignal.SEL_MPC_OPCODE:
+            instruction = self.current_instruction_for_decode()
+            if instruction.opcode not in MPC_OF_OPCODE:
+                raise RuntimeError(f"Opcode has no microcode: {instruction.opcode}")
+            self.next_mpc = MPC_OF_OPCODE[instruction.opcode]
+            return
+
+        raise RuntimeError(f"Invalid MPC selector: {selector}")
+
+    def latch_pc(self, selector: Any) -> None:
+        instruction = self.next_ir or self.ir
+        operand = instruction.operand if instruction is not None else 0
         dp = self.datapath
 
-        match micro_op:
-            # Stack
-            case MicroOp.PUSH_IR_OPERAND:
-                dp.push(self.ir.operand)
-                self.mpc += 1
+        if selector == MuxSignal.SEL_PC_NEXT:
+            self.next_pc = self.pc + INSTRUCTION_SIZE_BYTES
+        elif selector == MuxSignal.SEL_PC_OPERAND:
+            self.next_pc = operand
+        elif selector == MuxSignal.SEL_PC_JZ_BY_T:
+            self.next_pc = operand if dp.t == 0 else self.pc + INSTRUCTION_SIZE_BYTES
+        elif selector == MuxSignal.SEL_PC_JNZ_BY_T:
+            self.next_pc = operand if dp.t != 0 else self.pc + INSTRUCTION_SIZE_BYTES
+        elif selector == MuxSignal.SEL_PC_RETURN_STACK:
+            self.next_pc = self.read_return_stack_address(self.r)
+        else:
+            raise RuntimeError(f"Invalid PC selector: {selector}")
 
-            case MicroOp.DROP:
-                dp.pop()
-                self.mpc += 1
+    # return stack / R
+    @staticmethod
+    def r_to_index(address: int) -> int:
+        if address % DATA_WORD_SIZE_BYTES != 0:
+            raise RuntimeError(f"Unaligned return stack address: {address}")
+        return address // DATA_WORD_SIZE_BYTES
 
-            case MicroOp.DUP:
-                dp.push(dp.peek())
-                self.mpc += 1
+    def ensure_return_stack_index(self, index: int) -> None:
+        if index < 0:
+            raise RuntimeError(f"Return stack address is below zero: {index * DATA_WORD_SIZE_BYTES}")
+        while len(self.datapath.return_stack) <= index:
+            self.datapath.return_stack.append(0)
 
-            # Data memory
-            case MicroOp.LOAD_DIRECT:
-                address = self.ir.operand
-                value = dp.read_memory(address)
-                dp.push(value)
-                self.mpc += 1
+    def read_return_stack_address(self, address: int) -> int:
+        if address == EMPTY_R:
+            raise RuntimeError("Return stack underflow")
 
-            case MicroOp.STORE_DIRECT:
-                address = self.ir.operand
-                value = dp.pop()
-                dp.write_memory(address, value)
-                self.mpc += 1
+        index = self.r_to_index(address)
+        if not 0 <= index < len(self.datapath.return_stack):
+            raise RuntimeError(f"Return stack address out of range: {address}")
 
-            case MicroOp.LOAD_INDIRECT:
-                address = dp.pop()
-                value = dp.read_memory(address)
-                dp.push(value)
-                self.mpc += 1
+        return self.datapath.return_stack[index]
 
-            case MicroOp.STORE_INDIRECT:
-                value = dp.pop()
-                address = dp.pop()
-                dp.write_memory(address, value)
-                self.mpc += 1
+    def truncate_return_stack_to_r(self) -> None:
+        if self.r == EMPTY_R:
+            self.datapath.return_stack.clear()
+            return
 
-            # ALU input
-            case MicroOp.POP_A:
-                dp.reg_a = dp.pop()
-                self.mpc += 1
+        if self.r < EMPTY_R or self.r % DATA_WORD_SIZE_BYTES != 0:
+            raise RuntimeError(f"Invalid R value: {self.r}")
 
-            case MicroOp.POP_B:
-                dp.reg_b = dp.pop()
-                self.mpc += 1
+        new_len = self.r_to_index(self.r) + 1
+        del self.datapath.return_stack[new_len:]
 
-            # ALU operations
-            case MicroOp.ALU_ADD:
-                self.write_alu_result(dp.reg_b + dp.reg_a)
+    def select_return_stack_addr(self, selector: Any) -> None:
+        if selector == MuxSignal.SEL_RETURN_STACK_NEXT:
+            self.selected_return_addr = self.r + DATA_WORD_SIZE_BYTES
+        elif selector == MuxSignal.SEL_RETURN_STACK_CURRENT:
+            self.selected_return_addr = self.r
+        else:
+            raise RuntimeError(f"Invalid return stack address selector: {selector}")
 
-            case MicroOp.ALU_SUB:
-                self.write_alu_result(dp.reg_b - dp.reg_a)
+    def write_return_stack(self, selector: Any) -> None:
+        if selector != MuxSignal.SEL_RETURN_INPUT_PC_NEXT:
+            raise RuntimeError(f"Invalid return stack input selector: {selector}")
 
-            case MicroOp.ALU_MUL:
-                self.write_alu_result(dp.reg_b * dp.reg_a)
+        value = self.pc + INSTRUCTION_SIZE_BYTES
+        index = self.r_to_index(self.selected_return_addr)
+        self.ensure_return_stack_index(index)
+        self.datapath.return_stack[index] = value
 
-            case MicroOp.ALU_DIV:
-                if dp.reg_a == 0:
-                    raise RuntimeError("Division by zero")
-                self.write_alu_result(int(dp.reg_b / dp.reg_a))
+    def latch_r(self, selector: Any) -> None:
+        if selector == MuxSignal.SEL_R_NEXT:
+            self.next_r = self.r + DATA_WORD_SIZE_BYTES
+            return
 
-            case MicroOp.ALU_MOD:
-                if dp.reg_a == 0:
-                    raise RuntimeError("Modulo by zero")
-                self.write_alu_result(dp.reg_b % dp.reg_a)
+        if selector == MuxSignal.SEL_R_PREV:
+            if self.r == EMPTY_R:
+                raise RuntimeError("Return stack underflow")
+            self.next_r = self.r - DATA_WORD_SIZE_BYTES
+            return
 
-            case MicroOp.ALU_EQ:
-                self.write_alu_result(int(dp.reg_b == dp.reg_a))
+        raise RuntimeError(f"Invalid R selector: {selector}")
 
-            case MicroOp.ALU_NE:
-                self.write_alu_result(int(dp.reg_b != dp.reg_a))
-
-            case MicroOp.ALU_LT:
-                self.write_alu_result(int(dp.reg_b < dp.reg_a))
-
-            case MicroOp.ALU_GT:
-                self.write_alu_result(int(dp.reg_b > dp.reg_a))
-
-            case MicroOp.ALU_LE:
-                self.write_alu_result(int(dp.reg_b <= dp.reg_a))
-
-            case MicroOp.ALU_GE:
-                self.write_alu_result(int(dp.reg_b >= dp.reg_a))
-
-            # Control flow
-            case MicroOp.JMP:
-                self.pc = self.ir.operand
-                self.finish_instruction()
-
-            case MicroOp.JZ:
-                condition = dp.pop()
-                if condition == 0:
-                    self.pc = self.ir.operand
-                else:
-                    self.pc += INSTRUCTION_SIZE_BYTES
-                self.finish_instruction()
-
-            case MicroOp.JNZ:
-                condition = dp.pop()
-                if condition != 0:
-                    self.pc = self.ir.operand
-                else:
-                    self.pc += INSTRUCTION_SIZE_BYTES
-                self.finish_instruction()
-
-            case MicroOp.CALL:
-                dp.push_return(self.pc + INSTRUCTION_SIZE_BYTES)
-                self.pc = self.ir.operand
-                self.finish_instruction()
-
-            case MicroOp.RET:
-                self.pc = dp.pop_return()
-                self.finish_instruction()
-
-            case MicroOp.INC_PC:
-                self.pc += INSTRUCTION_SIZE_BYTES
-                self.mpc += 1
-
-            # Interrupts
-            case MicroOp.INT:
-                self.enter_interrupt(
-                    event_name="SW_INT",
-                    return_pc=self.pc + INSTRUCTION_SIZE_BYTES,
-                )
-
-            case MicroOp.IRET:
-                self.return_from_interrupt()
-
-            case MicroOp.EI:
-                self.interrupt_enable = True
-                self.pc += INSTRUCTION_SIZE_BYTES
-                self.finish_instruction()
-
-            case MicroOp.DI:
-                self.interrupt_enable = False
-                self.pc += INSTRUCTION_SIZE_BYTES
-                self.finish_instruction()
-
-            # Port-mapped I/O
-            case MicroOp.PORT_IN:
-                try:
-                    value = dp.read_port(self.ir.operand)
-                except StopIteration:
-                    self.halted = True
-                    self.halt_reason = "Input stream exhausted"
-                    return
-
-                dp.push(value)
-                self.mpc += 1
-
-            case MicroOp.PORT_OUT:
-                value = dp.pop()
-                dp.write_port(self.ir.operand, value)
-                self.mpc += 1
-
-            # System
-            case MicroOp.HALT:
-                self.halted = True
-                self.halt_reason = "HALT instruction"
-                self.mpc += 1
-
-            case MicroOp.END_INSTRUCTION:
-                self.finish_instruction()
-
-            case _:
-                raise RuntimeError(f"Unknown micro-op: {micro_op}")
-
-    def write_alu_result(self, value: int) -> None:
-        value = self.datapath.normalize_word(value)
-        self.last_alu_result = value
-
-        self.datapath.set_flags(value)
-        self.datapath.push(value)
-        self.mpc += 1
+    @staticmethod
+    def port_from_selector(selector: Any, operand: int) -> int:
+        if selector == MuxSignal.SEL_PORT_OPERAND:
+            return operand
+        raise RuntimeError(f"Invalid port selector: {selector}")
 
     # Logging
-    def write_log(self, micro_op_name: str) -> None:
+    def write_log(self, mpc_before: int, microinstruction: MicroInstruction) -> None:
         if self.ir is None:
             ir_text = "None"
         else:
@@ -526,25 +670,24 @@ class ControlUnit:
         out_text = repr(self.datapath.output_text())
         ret_text = repr(self.datapath.return_stack)
         stack_text = repr(stack_top)
+        micro_text = "; ".join(str(signal) for signal in microinstruction.signals)
 
         line = " | ".join(
             [
                 f"TICK={self.tick:06d}",
                 f"PC={self.pc:04d}",
-                f"MPC={self.mpc:02d}",
+                f"MPC={mpc_before:03d}->{self.mpc:03d}",
                 f"IR={fit(ir_text, 32)}",
-                f"MICRO={fit(micro_op_name, 16)}",
-                f"A={self.datapath.reg_a:>11d}",
-                f"B={self.datapath.reg_b:>11d}",
+                f"SIGNALS={fit(micro_text, 56)}",
+                f"SP={self.datapath.sp:>5d}",
+                f"T={self.datapath.t:>11d}",
+                f"F={self.datapath.f:>11d}",
+                f"AR={self.datapath.ar:>5d}",
+                f"R={self.r:>5d}",
                 f"ALU={self.last_alu_result:>11d}",
                 f"ZF={int(self.datapath.zero_flag)}",
                 f"NF={int(self.datapath.negative_flag)}",
                 f"STACK={fit(stack_text, 24)}",
-                f"IE={int(self.interrupt_enable)}",
-                f"IN_INT={int(self.inside_interrupt)}",
-                f"INT={fit(self.last_interrupt_event, 24)}",
-                f"INT_COUNT={self.interrupts_handled:03d}",
-                f"DEV={self.datapath.read_memory(INTERRUPT_DEVICE_CELL):>4d}",
                 f"RET={fit(ret_text, 16)}",
                 f"OUT={fit(out_text, 40)}",
             ]
@@ -553,8 +696,6 @@ class ControlUnit:
         self.log.append(line.rstrip())
 
 
-
-# simulation
 @dataclass(frozen=True)
 class SimulationResult:
     output: str
@@ -564,7 +705,6 @@ class SimulationResult:
     data_stack: list[int]
     return_stack: list[int]
     data_memory: list[int]
-    interrupts_handled: int
 
 
 def simulation(
@@ -573,8 +713,6 @@ def simulation(
     data_memory_size: int = DEFAULT_DATA_MEMORY_SIZE,
     tick_limit: int = DEFAULT_TICK_LIMIT,
     initial_data_memory: list[int] | None = None,
-    interrupt_ticks: list[int] | None = None,
-    interrupt_device_symbol: int = ord("!"),
 ) -> SimulationResult:
     datapath = DataPath(
         data_memory_size=data_memory_size,
@@ -585,8 +723,6 @@ def simulation(
     control_unit = ControlUnit(
         instruction_memory=instructions,
         datapath=datapath,
-        interrupt_ticks=interrupt_ticks or [],
-        interrupt_device_symbol=interrupt_device_symbol,
     )
 
     control_unit.run(tick_limit=tick_limit)
@@ -599,11 +735,8 @@ def simulation(
         data_stack=datapath.stack_snapshot(),
         return_stack=datapath.return_stack.copy(),
         data_memory=list(datapath.data_memory),
-        interrupts_handled=control_unit.interrupts_handled,
     )
 
-
-# CLI
 def read_data_file(filename: str | None) -> list[int] | None:
     if filename is None:
         return None
@@ -632,6 +765,7 @@ def write_log_file(filename: str | None, log: list[str]) -> None:
     if filename is not None:
         Path(filename).write_text("\n".join(log) + "\n", encoding="utf-8")
 
+
 def write_data_memory_file(filename: str | None, data_memory: list[int]) -> None:
     if filename is not None:
         Path(filename).write_text(
@@ -639,38 +773,10 @@ def write_data_memory_file(filename: str | None, data_memory: list[int]) -> None
             encoding="utf-8",
         )
 
-def parse_interrupt_ticks(value: str | None) -> list[int]:
-    if value is None or value.strip() == "":
-        return []
-
-    result: list[int] = []
-
-    for item in value.split(","):
-        item = item.strip()
-
-        if not item:
-            continue
-
-        tick = int(item)
-
-        if tick <= 0:
-            raise RuntimeError(f"Interrupt tick must be positive: {tick}")
-
-        result.append(tick)
-
-    return result
-
-
-def parse_interrupt_symbol(value: str) -> int:
-    if len(value) != 1:
-        raise RuntimeError("--interrupt-symbol must contain exactly one character")
-
-    return ord(value)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Stack processor simulator with microcoded Control Unit."
+        description="Stack processor simulator with signal-level microcoded Control Unit."
     )
 
     parser.add_argument(
@@ -714,18 +820,6 @@ def main() -> None:
         default=DEFAULT_DATA_MEMORY_SIZE,
         help="Data memory size in bytes.",
     )
-    parser.add_argument(
-        "--interrupt-ticks",
-        default="",
-        help="Comma-separated hardware interrupt schedule, for example: 40 or 40,120.",
-    )
-
-    parser.add_argument(
-        "--interrupt-symbol",
-        default="!",
-        help="One character placed into data_memory[0x01] when interrupt fires.",
-    )
-
     args = parser.parse_args()
 
     instructions = read_code(args.code)
@@ -738,8 +832,6 @@ def main() -> None:
         data_memory_size=args.data_memory_size,
         tick_limit=args.tick_limit,
         initial_data_memory=initial_data_memory,
-        interrupt_ticks=parse_interrupt_ticks(args.interrupt_ticks),
-        interrupt_device_symbol=parse_interrupt_symbol(args.interrupt_symbol),
     )
 
     write_output_file(args.output, result.output)
@@ -749,7 +841,6 @@ def main() -> None:
     print(result.output, end="")
     print(f"\n\nTicks: {result.ticks}")
     print(f"Halt reason: {result.halt_reason}")
-    print(f"Interrupts handled: {result.interrupts_handled}")
 
 
 if __name__ == "__main__":

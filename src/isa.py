@@ -62,13 +62,6 @@ class Opcode(IntEnum):
     IN = 0x60
     OUT = 0x61
 
-    # interrupts
-    # INT has no explicit operand; both software and hardware interrupts use
-    # the interrupt vector stored in data memory.
-    INT = 0x70
-    IRET = 0x71
-    EI = 0x72
-    DI = 0x73
 
 
 NO_OPERAND_OPCODES: set[Opcode] = {
@@ -89,10 +82,6 @@ NO_OPERAND_OPCODES: set[Opcode] = {
     Opcode.LE,
     Opcode.GE,
     Opcode.RET,
-    Opcode.INT,
-    Opcode.IRET,
-    Opcode.EI,
-    Opcode.DI,
 }
 
 

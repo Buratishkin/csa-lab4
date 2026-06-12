@@ -5,28 +5,22 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from src.isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES, Instruction, Opcode, write_code, write_disasm
-from src.lisp_parser import Expression, is_string_literal, parse, string_literal_value
+from isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES, Instruction, Opcode, write_code, write_disasm
+from lisp_parser import Expression, is_string_literal, parse, string_literal_value
+
 
 INPUT_PORT = 0
 OUTPUT_CHAR_PORT = 1
 OUTPUT_INT_PORT = 2
 
-# Backward-compatible alias: old code used OUTPUT_PORT for character output.
 OUTPUT_PORT = OUTPUT_CHAR_PORT
 
-INTERRUPT_VECTOR_ADDR = 0x00
-INTERRUPT_DEVICE_CELL = DATA_WORD_SIZE_BYTES
-RESERVED_DATA_CELLS = 2 * DATA_WORD_SIZE_BYTES
 
 SPECIAL_FORM_NAMES = {
     "load-at",
     "store-at",
     "read-int",
     "call",
-    "enable-interrupts",
-    "disable-interrupts",
-    "int",
     "+",
     "-",
     "*",
@@ -59,7 +53,7 @@ class TranslationError(Exception):
 class Compiler:
     instructions: list[Instruction] = field(default_factory=list)
     variables: dict[str, int] = field(default_factory=dict)
-    next_data_addr: int = RESERVED_DATA_CELLS
+    next_data_addr: int = 0
     data_initial: dict[int, int] = field(default_factory=dict)
     procedures: dict[str, int] = field(default_factory=dict)
     pending_calls: list[tuple[int, str]] = field(default_factory=list)
@@ -69,16 +63,11 @@ class Compiler:
 
     def compile_program(self, expressions: list[Expression]) -> list[Instruction]:
         procedure_expressions: list[list[Expression]] = []
-        interrupt_expression: list[Expression] | None = None
         main_expressions: list[Expression] = []
 
         for expression in expressions:
             if self.is_proc_definition(expression):
                 procedure_expressions.append(expression)
-            elif self.is_interrupt_definition(expression):
-                if interrupt_expression is not None:
-                    raise TranslationError("Only one interrupt handler is allowed")
-                interrupt_expression = expression
             else:
                 main_expressions.append(expression)
 
@@ -90,14 +79,8 @@ class Compiler:
         for procedure in procedure_expressions:
             self.compile_proc(procedure)
 
-        if interrupt_expression is not None:
-            self.compile_interrupt_handler(interrupt_expression)
-
         main_start = self.current_address()
         self.patch_operand(jmp_main_index, main_start)
-
-        if interrupt_expression is not None:
-            self.emit(Opcode.EI)
 
         for expression in main_expressions:
             self.compile_expr(expression)
@@ -120,6 +103,12 @@ class Compiler:
                 string_addr = self.allocate_pstr(string_literal_value(expression))
                 self.emit(Opcode.PUSHI, string_addr)
                 return
+
+            if expression in SPECIAL_FORM_NAMES:
+                raise TranslationError(
+                    f"Special form '{expression}' must be used as a list expression: "
+                    f"({expression} ...)"
+                )
 
             address = self.get_variable_address(expression)
             self.emit(Opcode.LOAD, address)
@@ -148,15 +137,6 @@ class Compiler:
 
             case "call":
                 self.compile_call(args)
-
-            case "enable-interrupts":
-                self.compile_enable_interrupts(args)
-
-            case "disable-interrupts":
-                self.compile_disable_interrupts(args)
-
-            case "int":
-                self.compile_software_interrupt(args)
 
             case "+" | "-" | "*" | "/" | "%":
                 self.compile_arithmetic(name, args)
@@ -204,37 +184,6 @@ class Compiler:
                 raise TranslationError(f"Unknown form or function: {name}")
 
     # Forms
-    def compile_interrupt_handler(self, expression: list[Expression]) -> None:
-        body = expression[1:]
-
-        if not body:
-            raise TranslationError("interrupt requires handler body")
-
-        handler_address = self.current_address()
-        self.data_initial[INTERRUPT_VECTOR_ADDR] = handler_address
-        self.data_initial.setdefault(INTERRUPT_DEVICE_CELL, 0)
-
-        for body_expr in body:
-            self.compile_expr(body_expr)
-            self.emit(Opcode.DROP)
-
-        self.emit(Opcode.IRET)
-
-    def compile_enable_interrupts(self, args: list[Expression]) -> None:
-        self.require_arg_count("enable-interrupts", args, 0)
-        self.emit(Opcode.EI)
-        self.emit(Opcode.PUSHI, 0)
-
-    def compile_disable_interrupts(self, args: list[Expression]) -> None:
-        self.require_arg_count("disable-interrupts", args, 0)
-        self.emit(Opcode.DI)
-        self.emit(Opcode.PUSHI, 0)
-
-    def compile_software_interrupt(self, args: list[Expression]) -> None:
-        self.require_arg_count("int", args, 0)
-        self.emit(Opcode.INT)
-        self.emit(Opcode.PUSHI, 0)
-
     def compile_setq(self, args: list[Expression]) -> None:
         self.require_arg_count("setq", args, 2)
 
@@ -399,8 +348,8 @@ class Compiler:
     def compile_store_at(self, args: list[Expression]) -> None:
         self.require_arg_count("store-at", args, 2)
 
-        self.compile_expr(args[0])  # address
         self.compile_expr(args[1])  # value
+        self.compile_expr(args[0])  # address
         self.emit(Opcode.STOREI)
 
         self.emit(Opcode.PUSHI, 0)
@@ -601,6 +550,8 @@ class Compiler:
     def compile_pstr_set(self, args: list[Expression]) -> None:
         self.require_arg_count("pstr-set", args, 3)
 
+        self.compile_expr(args[2])  # value
+
         self.compile_expr(args[0])  # pstr address
         self.compile_expr(args[1])  # zero-based index
         self.emit(Opcode.PUSHI, DATA_WORD_SIZE_BYTES)
@@ -608,7 +559,7 @@ class Compiler:
         self.emit(Opcode.ADD)
         self.emit(Opcode.PUSHI, DATA_WORD_SIZE_BYTES)
         self.emit(Opcode.ADD)
-        self.compile_expr(args[2])  # value
+
         self.emit(Opcode.STOREI)
         self.emit(Opcode.PUSHI, 0)
 
@@ -770,18 +721,6 @@ class Compiler:
 
         return isinstance(head, str) and head == "proc"
 
-    @staticmethod
-    def is_interrupt_definition(expression: Expression) -> bool:
-        if not isinstance(expression, list):
-            return False
-
-        if not expression:
-            return False
-
-        head = expression[0]
-
-        return isinstance(head, str) and head == "interrupt"
-
     def build_initial_data_memory(self) -> list[int]:
         if self.next_data_addr == 0:
             return []
@@ -870,8 +809,6 @@ def translate_file(input_filename: str | Path) -> TranslationResult:
     source = Path(input_filename).read_text(encoding="utf-8")
     return translate_source(source)
 
-
-# CLI
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Translate Mini Lisp source code to stack machine binary code."

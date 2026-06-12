@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeAlias
 
-Atom: TypeAlias = int | str
-Expression: TypeAlias = Atom | list["Expression"]
+
+Expression: TypeAlias = int | str | list["Expression"]
 
 
 class ParseError(Exception):
@@ -99,6 +99,7 @@ def read_symbol_or_number(source: str, start: int) -> tuple[str, int]:
 def parse(source: str) -> list[Expression]:
     return Parser(tokenize(source)).parse_program()
 
+
 @dataclass
 class Parser:
     tokens: list[str]
@@ -124,7 +125,7 @@ class Parser:
         if token == ")":
             raise ParseError("Unexpected ')'")
 
-        return parse_atom(token)
+        return parse_token(token)
 
     def parse_list(self) -> list[Expression]:
         expressions: list[Expression] = []
@@ -159,7 +160,7 @@ class Parser:
         return self.position >= len(self.tokens)
 
 
-def parse_atom(token: str) -> Atom:
+def parse_token(token: str) -> int | str:
     if is_integer_token(token):
         return int(token)
 
