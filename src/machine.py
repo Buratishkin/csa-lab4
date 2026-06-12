@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import isa as _isa
+import src.isa as _isa
 
-import microcode as _microcode
+import src.microcode as _microcode
 
 
 DATA_WORD_SIZE_BYTES = _isa.DATA_WORD_SIZE_BYTES

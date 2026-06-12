@@ -5,8 +5,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES, Instruction, Opcode, write_code, write_disasm
-from lisp_parser import Expression, is_string_literal, parse, string_literal_value
+from src.isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES, Instruction, Opcode, write_code, write_disasm
+from src.lisp_parser import Expression, is_string_literal, parse, string_literal_value
 
 
 INPUT_PORT = 0

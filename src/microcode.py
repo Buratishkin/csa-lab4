@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TypeAlias
 
-from isa import Opcode
+from src.isa import Opcode
 
 
 class MuxSignal(Enum):

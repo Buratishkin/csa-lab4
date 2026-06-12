@@ -9,9 +9,9 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from srу.machine import simulation
-from srу.translator import translate_source
-from srу.isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES
+from src.machine import simulation
+from src.translator import translate_source
+from src.isa import DATA_WORD_SIZE_BYTES, INSTRUCTION_SIZE_BYTES
 
 
 GOLDEN_DIR = PROJECT_ROOT / "golden"
